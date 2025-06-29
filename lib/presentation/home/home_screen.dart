@@ -21,61 +21,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _selectedDay = _focusedDay;
   }
-  
-  // --- MODIFIED! 日またぎロジックを追加 ---
-  Future<void> _addSchedule({ required String title, required DateTime date, required bool isAllDay, TimeOfDay? startTime, TimeOfDay? endTime,}) async {
-    final user = FirebaseAuth.instance.currentUser; if (user == null) { return; }
-    
-    final effectiveStartTime = startTime ?? TimeOfDay.now();
-    final effectiveEndTime = endTime ?? effectiveStartTime;
 
-    var startDateTime = DateTime(date.year, date.month, date.day, effectiveStartTime.hour, effectiveStartTime.minute);
-    var endDateTime = DateTime(date.year, date.month, date.day, effectiveEndTime.hour, effectiveEndTime.minute);
-
-    // 終了時刻が開始時刻より早い場合、終了日を翌日にする
-    if (!isAllDay && endDateTime.isBefore(startDateTime)) {
-      endDateTime = endDateTime.add(const Duration(days: 1));
-    }
-    
-    // 終日の場合は、日付のみで時刻は考慮しない
-    if (isAllDay) {
-      startDateTime = DateTime(date.year, date.month, date.day);
-      endDateTime = DateTime(date.year, date.month, date.day);
-    }
-
-    try {
-      await FirebaseFirestore.instance.collection('schedules').add({'title': title, 'userId': user.uid, 'isAllDay': isAllDay, 'startTime': Timestamp.fromDate(startDateTime), 'endTime': Timestamp.fromDate(endDateTime), 'createdAt': FieldValue.serverTimestamp(), 'updatedAt': FieldValue.serverTimestamp(),});
-      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('予定を追加しました。'))); }
-    } catch (e) {
-      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('エラーが発生しました: $e'))); }
-    }
-  }
-
-  // --- MODIFIED! 日またぎロジックを追加 ---
-  Future<void> _updateSchedule({ required String docId, required String title, required DateTime date, required bool isAllDay, TimeOfDay? startTime, TimeOfDay? endTime, }) async {
-    final effectiveStartTime = startTime ?? TimeOfDay.now();
-    final effectiveEndTime = endTime ?? effectiveStartTime;
-    
-    var startDateTime = DateTime(date.year, date.month, date.day, effectiveStartTime.hour, effectiveStartTime.minute);
-    var endDateTime = DateTime(date.year, date.month, date.day, effectiveEndTime.hour, effectiveEndTime.minute);
-
-    if (!isAllDay && endDateTime.isBefore(startDateTime)) {
-      endDateTime = endDateTime.add(const Duration(days: 1));
-    }
-    if (isAllDay) {
-      startDateTime = DateTime(date.year, date.month, date.day);
-      endDateTime = DateTime(date.year, date.month, date.day);
-    }
-    
-    try {
-      await FirebaseFirestore.instance.collection('schedules').doc(docId).update({'title': title, 'isAllDay': isAllDay, 'startTime': Timestamp.fromDate(startDateTime), 'endTime': Timestamp.fromDate(endDateTime), 'updatedAt': FieldValue.serverTimestamp(),});
-      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('予定を更新しました。'))); }
-    } catch (e) {
-      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('更新中にエラーが発生しました: $e'))); }
-    }
-  }
-
-  // これ以降のメソッドは変更なし
   Future<void> _showScheduleDialog({DocumentSnapshot? scheduleDoc}) async {
     final isEditing = scheduleDoc != null;
     final initialData = isEditing ? scheduleDoc!.data() as Map<String, dynamic> : null;
@@ -88,6 +34,8 @@ class _HomeScreenState extends State<HomeScreen> {
     TimeOfDay? endTime;
     final initialEndTimeStamp = initialData?['endTime'] as Timestamp?;
     if (!isAllDay && initialEndTimeStamp != null) { endTime = TimeOfDay.fromDateTime(initialEndTimeStamp.toDate()); }
+    
+    String? titleErrorText;
 
     return showDialog(context: context, builder: (context) {
       return StatefulBuilder(builder: (context, setState) {
@@ -97,7 +45,13 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(controller: titleController, decoration: const InputDecoration(hintText: "タイトルを入力")),
+                TextField(
+                  controller: titleController,
+                  decoration: InputDecoration(
+                    hintText: "タイトルを入力",
+                    errorText: titleErrorText,
+                  ),
+                ),
                 const SizedBox(height: 20),
                 Row(children: [ const Text('終日:'), Checkbox(value: isAllDay, onChanged: (value) { setState(() { isAllDay = value ?? false; }); }), ]),
                 Row(children: [ const Text('日付: '), TextButton(child: Text(DateFormat('yyyy年M月d日').format(selectedDate), style: const TextStyle(fontSize: 16)), onPressed: () async { final newDate = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2020), lastDate: DateTime(2030)); if (newDate != null) { setState(() { selectedDate = newDate; }); } },), ]),
@@ -112,12 +66,17 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text(isEditing ? '更新' : '追加'),
               onPressed: () {
                 final title = titleController.text;
-                if (title.isNotEmpty) {
-                  if (isEditing) {
-                    _updateSchedule(docId: scheduleDoc!.id, title: title, date: selectedDate, isAllDay: isAllDay, startTime: startTime, endTime: endTime);
-                  } else {
-                    _addSchedule(title: title, date: selectedDate, isAllDay: isAllDay, startTime: startTime, endTime: endTime);
-                  }
+                if (title.isEmpty) {
+                  setState(() {
+                    titleErrorText = 'タイトルを入力してください';
+                  });
+                  return;
+                }
+                
+                if (isEditing) {
+                  _updateSchedule(docId: scheduleDoc!.id, title: title, date: selectedDate, isAllDay: isAllDay, startTime: startTime, endTime: endTime);
+                } else {
+                  _addSchedule(title: title, date: selectedDate, isAllDay: isAllDay, startTime: startTime, endTime: endTime);
                 }
                 Navigator.of(context).pop();
               },
@@ -127,7 +86,39 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     });
   }
-  Future<void> _deleteSchedule(String docId) async { try { await FirebaseFirestore.instance.collection('schedules').doc(docId).delete(); } catch (e) { if(mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('削除中にエラーが発生しました: $e'))); } } }
+
+  Future<void> _addSchedule({ required String title, required DateTime date, required bool isAllDay, TimeOfDay? startTime, TimeOfDay? endTime,}) async {
+    final user = FirebaseAuth.instance.currentUser; if (user == null) { return; }
+    final effectiveStartTime = startTime ?? TimeOfDay.now();
+    final effectiveEndTime = endTime ?? effectiveStartTime;
+    var startDateTime = DateTime(date.year, date.month, date.day, effectiveStartTime.hour, effectiveStartTime.minute);
+    var endDateTime = DateTime(date.year, date.month, date.day, effectiveEndTime.hour, effectiveEndTime.minute);
+    if (!isAllDay && endDateTime.isBefore(startDateTime)) { endDateTime = endDateTime.add(const Duration(days: 1)); }
+    if (isAllDay) { startDateTime = DateTime(date.year, date.month, date.day); endDateTime = DateTime(date.year, date.month, date.day); }
+    try {
+      await FirebaseFirestore.instance.collection('schedules').add({'title': title, 'userId': user.uid, 'isAllDay': isAllDay, 'startTime': Timestamp.fromDate(startDateTime), 'endTime': Timestamp.fromDate(endDateTime), 'createdAt': FieldValue.serverTimestamp(), 'updatedAt': FieldValue.serverTimestamp(),});
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('予定を追加しました。'))); }
+    } catch (e) {
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('エラーが発生しました: $e'))); }
+    }
+  }
+
+  Future<void> _updateSchedule({ required String docId, required String title, required DateTime date, required bool isAllDay, TimeOfDay? startTime, TimeOfDay? endTime, }) async {
+    final effectiveStartTime = startTime ?? TimeOfDay.now();
+    final effectiveEndTime = endTime ?? effectiveStartTime;
+    var startDateTime = DateTime(date.year, date.month, date.day, effectiveStartTime.hour, effectiveStartTime.minute);
+    var endDateTime = DateTime(date.year, date.month, date.day, effectiveEndTime.hour, effectiveEndTime.minute);
+    if (!isAllDay && endDateTime.isBefore(startDateTime)) { endDateTime = endDateTime.add(const Duration(days: 1)); }
+    if (isAllDay) { startDateTime = DateTime(date.year, date.month, date.day); endDateTime = DateTime(date.year, date.month, date.day); }
+    try {
+      await FirebaseFirestore.instance.collection('schedules').doc(docId).update({'title': title, 'isAllDay': isAllDay, 'startTime': Timestamp.fromDate(startDateTime), 'endTime': Timestamp.fromDate(endDateTime), 'updatedAt': FieldValue.serverTimestamp(),});
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('予定を更新しました。'))); }
+    } catch (e) {
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('更新中にエラーが発生しました: $e'))); }
+    }
+  }
+
+  Future<void> _deleteSchedule(String docId) async { try { await FirebaseFirestore.instance.collection('schedules').doc(docId).delete(); } catch (e) { if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('削除中にエラーが発生しました: $e'))); } } }
   Future<void> _showDeleteConfirmDialog(String docId, String title) async { return showDialog(context: context, builder: (context) { return AlertDialog(title: const Text('削除の確認'), content: Text('「$title」を本当に削除しますか？\nこの操作は元に戻せません。'), actions: [ TextButton(child: const Text('キャンセル'), onPressed: () => Navigator.of(context).pop()), TextButton(child: const Text('削除', style: TextStyle(color: Colors.red)), onPressed: () { _deleteSchedule(docId); Navigator.of(context).pop(); }), ],); }); }
   Future<void> _logout() async { await FirebaseAuth.instance.signOut(); }
 
@@ -161,13 +152,9 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     }
-    
-    // --- MODIFIED! フィルタリングロジックを修正 ---
+
     final filteredDocs = allDocs.where((doc) {
-      // 日付が選択されていない場合は、すべての予定をリストに表示する
-      if (_selectedDay == null) {
-        return true;
-      }
+      if (_selectedDay == null) { return true; }
       final data = doc.data();
       if (data is Map<String, dynamic>) {
         final startTime = data['startTime'] as Timestamp?;
@@ -198,7 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onDaySelected: (selectedDay, focusedDay) {
             setState(() {
               if (isSameDay(_selectedDay, selectedDay)) {
-                _selectedDay = null; // 選択解除を有効化
+                _selectedDay = null;
               } else {
                 _selectedDay = selectedDay;
                 _focusedDay = focusedDay;
@@ -211,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 8.0),
         Expanded(
           child: filteredDocs.isEmpty 
-              ? Center(child: Text(_selectedDay != null ? 'この日の予定はありません。' : '予定はまだありません。'))
+              ? Center(child: Text(_selectedDay != null ? 'この日の予定はありません。' : 'すべての予定'))
               : ListView.builder(
             itemCount: filteredDocs.length,
             itemBuilder: (context, index) {
@@ -224,7 +211,6 @@ class _HomeScreenState extends State<HomeScreen> {
               String timeText;
               if (isAllDay) { timeText = '終日'; } 
               else if (startTime != null && endTime != null) {
-                // 日付が違う場合は、日付も表示する
                 if (!isSameDay(startTime.toDate(), endTime.toDate())) {
                   timeText = '${DateFormat.Hm().format(startTime.toDate())} - ${DateFormat('M/d H:mm').format(endTime.toDate())}';
                 } else {
