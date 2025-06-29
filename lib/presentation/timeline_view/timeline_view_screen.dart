@@ -1,8 +1,8 @@
+import 'dart:async'; // Timerを使うためにインポート
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:linked_scroll_controller/linked_scroll_controller.dart';
 import 'package:collection/collection.dart';
 
 class TimelineViewScreen extends StatefulWidget {
@@ -18,40 +18,34 @@ class TimelineViewScreen extends StatefulWidget {
 }
 
 class _TimelineViewScreenState extends State<TimelineViewScreen> {
-  late final LinkedScrollControllerGroup _controllers;
-  late final ScrollController _timeRulerController;
-  late final ScrollController _scheduleAreaController;
-
+  final ScrollController _scrollController = ScrollController();
   final double _hourHeight = 80.0;
-  final int _totalDays = 365 * 2;
-  late final int _initialDayIndex;
+  final int _totalDays = 365; // 表示する合計日数（約1年分）
   late final DateTime _startDate;
+  late final int _initialDayIndex;
 
   @override
   void initState() {
     super.initState();
-    _controllers = LinkedScrollControllerGroup();
-    _timeRulerController = _controllers.addAndGet();
-    _scheduleAreaController = _controllers.addAndGet();
-
     _initialDayIndex = _totalDays ~/ 2;
     _startDate = DateUtils.dateOnly(widget.initialDate).subtract(Duration(days: _initialDayIndex));
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // --- MODIFIED! タイミング問題を解決するため、Timerで少し遅らせて実行 ---
+    Timer(const Duration(milliseconds: 1), () {
       if (mounted) {
         final initialOffset = _initialDayIndex * _hourHeight * 24;
-        _scheduleAreaController.jumpTo(initialOffset);
+        _scrollController.jumpTo(initialOffset);
       }
     });
   }
 
   @override
   void dispose() {
-    _timeRulerController.dispose();
-    _scheduleAreaController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
+  // 時刻から、その日の0時を基準としたY座標オフセットを計算する
   double _calculateTopOffset(DateTime time) {
     return time.hour * _hourHeight + time.minute / 60.0 * _hourHeight;
   }
@@ -79,16 +73,14 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
           }
 
           final allDocs = snapshot.data?.docs ?? [];
-          final groupedSchedules = groupBy(allDocs, (QueryDocumentSnapshot doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final timestamp = data['startTime'] as Timestamp;
-            return DateUtils.dateOnly(timestamp.toDate());
-          });
-
-          return Row(
+          
+          // --- MODIFIED! タイムライン全体をStackで構築し、その上に予定ブロックを描画する ---
+          return Stack(
             children: [
-              _buildTimeRuler(),
-              Expanded(child: _buildScheduleArea(groupedSchedules)),
+              // 背景グリッドと時間軸
+              _buildBackgroundGrid(),
+              // 予定ブロック
+              ..._buildAllScheduleBlocks(allDocs),
             ],
           );
         },
@@ -96,11 +88,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           final targetOffset = _initialDayIndex * _hourHeight * 24;
-          _scheduleAreaController.animateTo(
-            targetOffset,
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeOut,
-          );
+          _scrollController.animateTo(targetOffset, duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
         },
         tooltip: '指定日に移動',
         child: const Icon(Icons.center_focus_strong),
@@ -108,129 +96,121 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     );
   }
 
-  Widget _buildTimeRuler() {
-    return SizedBox(
-      width: 60,
-      child: ListView.builder(
-        controller: _timeRulerController,
-        itemCount: 24 * _totalDays,
-        itemExtent: _hourHeight,
-        itemBuilder: (context, index) {
-          final hour = index % 24;
-          return Container(
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade200), right: BorderSide(color: Colors.grey.shade300))),
-            child: Center(child: hour == 0 ? null : Text('${hour.toString().padLeft(2, '0')}:00')),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildScheduleArea(Map<DateTime, List<QueryDocumentSnapshot>> groupedSchedules) {
-    final availableWidth = MediaQuery.of(context).size.width - 60;
-
+  // --- MODIFIED! 1つのListViewで時間軸と背景グリッドを描画する方式に変更 ---
+  Widget _buildBackgroundGrid() {
     return ListView.builder(
-      controller: _scheduleAreaController,
-      itemCount: _totalDays,
-      itemExtent: _hourHeight * 24,
-      itemBuilder: (context, dayIndex) {
+      controller: _scrollController,
+      itemCount: _totalDays * 24, // 1時間ごとに1アイテム
+      itemExtent: _hourHeight,
+      itemBuilder: (context, index) {
+        final dayIndex = index ~/ 24;
+        final hour = index % 24;
         final day = _startDate.add(Duration(days: dayIndex));
-        final schedulesForDay = groupedSchedules[day] ?? [];
 
-        return Container(
-          decoration: BoxDecoration(border: Border(right: BorderSide(color: Colors.grey.shade200))),
-          child: Stack(
-            children: [
-              for (int hour = 0; hour < 24; hour++) Positioned(top: _hourHeight * hour, left: 0, right: 0, child: Container(height: 1, color: Colors.grey.shade200)),
-              Align(
-                alignment: Alignment.topLeft,
-                child: Padding(
-                  padding: const EdgeInsets.all(4.0),
-                  child: Text('${day.month}/${day.day} (${DateFormat.E('ja').format(day)})', style: TextStyle(fontWeight: FontWeight.bold, color: DateUtils.isSameDay(day, widget.initialDate) ? Colors.deepPurple : null)),
-                ),
+        return Row(
+          children: [
+            // 左側の時間軸
+            SizedBox(
+              width: 60,
+              height: _hourHeight,
+              child: Center(
+                // 0時の場合は日付を表示
+                child: hour == 0
+                    ? Text('${day.month}/${day.day}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12))
+                    : Text('${hour.toString().padLeft(2, '0')}:00'),
               ),
-              // --- MODIFIED! メソッド名のタイプミスを修正 ---
-              ..._buildLayoutEventsForDay(schedulesForDay, availableWidth),
-              if (DateUtils.isSameDay(day, DateTime.now())) _buildCurrentTimeIndicator(day),
-            ],
-          ),
+            ),
+            // 右側の罫線
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade200), left: BorderSide(color: Colors.grey.shade300))),
+              ),
+            ),
+          ],
         );
       },
     );
   }
-
-  List<Widget> _buildLayoutEventsForDay(List<QueryDocumentSnapshot> docs, double availableWidth) {
-    if (docs.isEmpty) return [];
-
-    final events = docs.map((doc) {
+  
+  // --- MODIFIED! 日またぎを考慮して、すべての予定ブロックを一度に生成する ---
+  List<Widget> _buildAllScheduleBlocks(List<QueryDocumentSnapshot> allDocs) {
+    final scheduleAreaWidth = MediaQuery.of(context).size.width - 60;
+    
+    // 日付ごとに予定をグループ化
+    final groupedSchedules = groupBy(allDocs, (QueryDocumentSnapshot doc) {
       final data = doc.data() as Map<String, dynamic>;
-      return { 'doc': doc, 'start': (data['startTime'] as Timestamp).toDate(), 'end': (data['endTime'] as Timestamp).toDate() };
-    }).toList()
-      // --- MODIFIED! 安全なソート処理に修正 ---
-      ..sort((a, b) {
-        final aTime = a['start'] as DateTime?;
-        final bTime = b['start'] as DateTime?;
-        if (aTime == null && bTime == null) return 0;
-        if (aTime == null) return 1;
-        if (bTime == null) return -1;
-        return aTime.compareTo(bTime);
-      });
-
-    final List<List<Map<String, dynamic>>> columns = [];
-    for (final event in events) {
-      bool placed = false;
-      for (final col in columns) {
-        if (!(col.last['end'] as DateTime).isAfter(event['start'] as DateTime)) {
-          col.add(event);
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) { columns.add([event]); }
-    }
+      final timestamp = data['startTime'] as Timestamp;
+      return DateUtils.dateOnly(timestamp.toDate());
+    });
 
     final List<Widget> positionedEvents = [];
-    final columnWidth = availableWidth / columns.length;
-    for (int i = 0; i < columns.length; i++) {
-      final col = columns[i];
-      for (final event in col) {
-        final top = _calculateTopOffset(event['start'] as DateTime);
-        final height = (event['end'] as DateTime).difference(event['start'] as DateTime).inMinutes / 60.0 * _hourHeight;
-        final left = i * columnWidth;
+    groupedSchedules.forEach((day, docs) {
+      // --- 重なり計算ロジック (以前と同じ) ---
+      final events = docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return { 'doc': doc, 'start': (data['startTime'] as Timestamp).toDate(), 'end': (data['endTime'] as Timestamp).toDate() };
+      }).toList()..sort((a, b) => (a['start'] as DateTime).compareTo(b['start'] as DateTime));
 
-        final data = event['doc'].data() as Map<String, dynamic>;
-        final isAllDay = data['isAllDay'] as bool? ?? false;
-        if(isAllDay) continue;
-
-        positionedEvents.add(
-          Positioned(
-            top: top, left: left, width: columnWidth, height: height,
-            child: Container(
-              padding: const EdgeInsets.all(4), margin: const EdgeInsets.only(left: 2, right: 2),
-              // --- MODIFIED! 非推奨のwithOpacityを修正 ---
-              decoration: BoxDecoration(color: Colors.blue.withAlpha(200), borderRadius: BorderRadius.circular(4)),
-              child: Text(data['title'], style: const TextStyle(color: Colors.white, fontSize: 12), overflow: TextOverflow.ellipsis),
-            ),
-          ),
-        );
+      final List<List<Map<String, dynamic>>> columns = [];
+      for (final event in events) {
+        bool placed = false;
+        for (final col in columns) {
+          if (!(col.last['end'] as DateTime).isAfter(event['start'] as DateTime)) {
+            col.add(event);
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) { columns.add([event]); }
       }
-    }
-    return positionedEvents;
-  }
+      
+      final columnWidth = scheduleAreaWidth / columns.length;
+      for (int i = 0; i < columns.length; i++) {
+        final col = columns[i];
+        for (final event in col) {
+          final data = event['doc'].data() as Map<String, dynamic>;
+          if (data['isAllDay'] as bool? ?? false) continue; // 終日はタイムラインに表示しない
 
-  Widget _buildCurrentTimeIndicator(DateTime day) {
+          final startDateTime = event['start'] as DateTime;
+          final endDateTime = event['end'] as DateTime;
+          
+          final dayIndex = DateUtils.dateOnly(startDateTime).difference(_startDate).inDays;
+          final top = (dayIndex * _hourHeight * 24) + _calculateTopOffset(startDateTime);
+          final height = endDateTime.difference(startDateTime).inMinutes / 60.0 * _hourHeight;
+          final left = 60 + (i * columnWidth);
+
+          positionedEvents.add(
+            Positioned(
+              top: top, left: left, width: columnWidth, height: height,
+              child: Container(
+                padding: const EdgeInsets.all(4), margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(color: Colors.blue.withAlpha(200), borderRadius: BorderRadius.circular(4)),
+                child: Text(data['title'], style: const TextStyle(color: Colors.white, fontSize: 12), overflow: TextOverflow.ellipsis),
+              ),
+            ),
+          );
+        }
+      }
+    });
+
+    // 現在時刻の線は、他のすべての要素より手前に表示するために最後に追加
     final now = DateTime.now();
-    if (!DateUtils.isSameDay(now, day)) return const SizedBox.shrink();
+    final dayIndex = DateUtils.dateOnly(now).difference(_startDate).inDays;
+    if (dayIndex >= 0 && dayIndex < _totalDays) {
+      final top = (dayIndex * _hourHeight * 24) + _calculateTopOffset(now);
+      positionedEvents.add(
+        Positioned(
+          top: top - 1, left: 60 - 8, right: 0,
+          child: Row(
+            children: [
+              Icon(Icons.circle, color: Colors.red[700], size: 12),
+              Expanded(child: Container(height: 2, color: Colors.red[700])),
+            ],
+          ),
+        ),
+      );
+    }
     
-    final top = _calculateTopOffset(now);
-    return Positioned(
-      top: top - 1, left: -8, right: 0,
-      child: Row(
-        children: [
-          Icon(Icons.circle, color: Colors.red[700], size: 12),
-          Expanded(child: Container(height: 2, color: Colors.red[700])),
-        ],
-      ),
-    );
+    return positionedEvents;
   }
 }
