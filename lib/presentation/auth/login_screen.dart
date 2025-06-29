@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart'; // NEW! Firebase Authをインポート
 import 'package:flutter/material.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -8,11 +9,54 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  // --- 修正点1: コントローラを準備 ---
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  // --- 修正点2: コントローラを破棄する処理を追加 ---
+  // NEW! 新規登録処理を行うメソッド
+  Future<void> _signUp() async {
+    // try-catchでエラー処理を実装
+    try {
+      final email = _emailController.text;
+      final password = _passwordController.text;
+
+      // Firebase Authにユーザーを新規登録
+      final UserCredential userCredential =
+          await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      // 成功した場合のメッセージを画面に表示
+      if (mounted) { // mountedプロパティでウィジェットが有効か確認
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ユーザー登録が完了しました。')),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      // エラーコードに応じたメッセージを画面に表示
+      String errorMessage = 'エラーが発生しました。';
+      if (e.code == 'weak-password') {
+        errorMessage = 'パスワードが弱すぎます。';
+      } else if (e.code == 'email-already-in-use') {
+        errorMessage = 'このメールアドレスは既に使用されています。';
+      } else if (e.code == 'invalid-email') {
+        errorMessage = 'メールアドレスの形式が正しくありません。';
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
+      }
+    } catch (e) {
+      // その他のエラー
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -32,7 +76,6 @@ class _LoginScreenState extends State<LoginScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             TextField(
-              // --- 修正点3: TextFieldにコントローラを接続 ---
               controller: _emailController,
               decoration: const InputDecoration(
                 labelText: 'メールアドレス',
@@ -42,7 +85,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 16),
             TextField(
-              // --- 修正点3: TextFieldにコントローラを接続 ---
               controller: _passwordController,
               obscureText: true,
               decoration: const InputDecoration(
@@ -51,19 +93,14 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 32),
             ElevatedButton(
-              // --- 修正点4: ボタンを押したときの動作を追加 ---
               onPressed: () {
-                // コントローラから入力値を取得して、コンソールに表示
-                final email = _emailController.text;
-                final password = _passwordController.text;
-                print('Email: $email, Password: $password');
+                // TODO: ログイン処理は後でここに書く
               },
               child: const Text('ログイン'),
             ),
             TextButton(
-              onPressed: () {
-                // TODO: 新規登録画面への遷移は後でここに書く
-              },
+              // NEW! 新規登録ボタンが押されたら_signUpメソッドを呼び出す
+              onPressed: _signUp,
               child: const Text('新規登録はこちら'),
             ),
           ],
