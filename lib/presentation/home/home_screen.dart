@@ -34,7 +34,6 @@ class _HomeScreenState extends State<HomeScreen> {
     TimeOfDay? endTime;
     final initialEndTimeStamp = initialData?['endTime'] as Timestamp?;
     if (!isAllDay && initialEndTimeStamp != null) { endTime = TimeOfDay.fromDateTime(initialEndTimeStamp.toDate()); }
-    
     String? titleErrorText;
 
     return showDialog(context: context, builder: (context) {
@@ -45,13 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
-                  controller: titleController,
-                  decoration: InputDecoration(
-                    hintText: "タイトルを入力",
-                    errorText: titleErrorText,
-                  ),
-                ),
+                TextField(controller: titleController, decoration: InputDecoration(hintText: "タイトルを入力", errorText: titleErrorText)),
                 const SizedBox(height: 20),
                 Row(children: [ const Text('終日:'), Checkbox(value: isAllDay, onChanged: (value) { setState(() { isAllDay = value ?? false; }); }), ]),
                 Row(children: [ const Text('日付: '), TextButton(child: Text(DateFormat('yyyy年M月d日').format(selectedDate), style: const TextStyle(fontSize: 16)), onPressed: () async { final newDate = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2020), lastDate: DateTime(2030)); if (newDate != null) { setState(() { selectedDate = newDate; }); } },), ]),
@@ -67,12 +60,9 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () {
                 final title = titleController.text;
                 if (title.isEmpty) {
-                  setState(() {
-                    titleErrorText = 'タイトルを入力してください';
-                  });
+                  setState(() { titleErrorText = 'タイトルを入力してください'; });
                   return;
                 }
-                
                 if (isEditing) {
                   _updateSchedule(docId: scheduleDoc!.id, title: title, date: selectedDate, isAllDay: isAllDay, startTime: startTime, endTime: endTime);
                 } else {
@@ -126,7 +116,29 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     return Scaffold(
-      appBar: AppBar(title: const Text('ホーム（月間）'), actions: [ IconButton(icon: const Icon(Icons.timeline), tooltip: 'タイムラインビュー', onPressed: () { Navigator.of(context).push(MaterialPageRoute(builder: (context) => const TimelineViewScreen())); }), IconButton(icon: const Icon(Icons.logout), tooltip: 'ログアウト', onPressed: _logout) ]),
+      appBar: AppBar(
+        title: const Text('ホーム（月間）'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.timeline),
+            tooltip: 'タイムラインビュー',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => TimelineViewScreen(
+                    initialDate: _selectedDay ?? DateTime.now(),
+                  ),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'ログアウト',
+            onPressed: _logout,
+          ),
+        ],
+      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('schedules').where('userId', isEqualTo: user?.uid).snapshots(),
         builder: (context, snapshot) {
