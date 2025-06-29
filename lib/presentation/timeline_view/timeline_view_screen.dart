@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:linked_scroll_controller/linked_scroll_controller.dart';
 
 class TimelineViewScreen extends StatefulWidget {
   const TimelineViewScreen({super.key});
@@ -8,9 +9,11 @@ class TimelineViewScreen extends StatefulWidget {
 }
 
 class _TimelineViewScreenState extends State<TimelineViewScreen> {
-  // --- MODIFIED! 2つのスクロールコントローラーを準備 ---
-  final ScrollController _timeRulerController = ScrollController();
-  final ScrollController _scheduleAreaController = ScrollController();
+  // --- NEW! スクロールコントローラーをグループ化して準備 ---
+  late final LinkedScrollControllerGroup _scrollControllerGroup;
+  late final ScrollController _timeRulerController;
+  late final ScrollController _scheduleAreaController;
+
   final double _hourHeight = 60.0;
   final int _totalDays = 730; // 約2年分の日数を定義 (過去1年、未来1年)
   final int _initialDayIndex = 365; // リストの中での「今日」のインデックス
@@ -18,21 +21,15 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   @override
   void initState() {
     super.initState();
-    // 2つのリストのスクロールを同期させる
-    _timeRulerController.addListener(() {
-      if (_scheduleAreaController.hasClients && _scheduleAreaController.offset != _timeRulerController.offset) {
-        _scheduleAreaController.jumpTo(_timeRulerController.offset);
-      }
-    });
-    _scheduleAreaController.addListener(() {
-      if (_timeRulerController.hasClients && _timeRulerController.offset != _scheduleAreaController.offset) {
-        _timeRulerController.jumpTo(_scheduleAreaController.offset);
-      }
-    });
+    // --- NEW! グループからコントローラーを作成 ---
+    _scrollControllerGroup = LinkedScrollControllerGroup();
+    _timeRulerController = _scrollControllerGroup.addAndGet();
+    _scheduleAreaController = _scrollControllerGroup.addAndGet();
 
-    // --- NEW! 画面が開いたときに、「今日」の位置までスクロールする ---
+    // 画面が開いたときに、「今日」の位置までスクロールする
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final initialOffset = _initialDayIndex * _hourHeight * 24;
+      // 24時間 * 1時間あたりの高さ * 今日のインデックス
+      final initialOffset = 24 * _hourHeight * _initialDayIndex;
       _scheduleAreaController.jumpTo(initialOffset);
     });
   }
@@ -52,11 +49,13 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       ),
       body: Row(
         children: [
+          // --- 左側の時間軸 ---
           _buildTimeRuler(),
+
+          // --- 右側の予定を描画するスクロールエリア ---
           Expanded(
-            // --- MODIFIED! 過去の日付も表示できるようにロジックを変更 ---
             child: ListView.builder(
-              controller: _scheduleAreaController,
+              controller: _scheduleAreaController, // こちらにコントローラーをセット
               itemCount: _totalDays,
               itemBuilder: (context, index) {
                 final startDate = DateTime.now().subtract(Duration(days: _initialDayIndex));
@@ -75,12 +74,12 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
                         '${day.month}/${day.day}',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          // 今日の日付を分かりやすくする
                           color: DateUtils.isSameDay(day, DateTime.now()) ? Colors.deepPurple : null,
                         ),
                       ),
                     ),
                   ),
+                  // TODO: ここに後で、Stackを使って予定ブロックを重ねて描画します
                 );
               },
             ),
@@ -94,10 +93,9 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     return SizedBox(
       width: 60,
       child: ListView.builder(
-        controller: _timeRulerController,
-        // --- MODIFIED! 時間軸も日数分生成する ---
-        itemCount: 24 * _totalDays,
+        controller: _timeRulerController, // こちらにもコントローラーをセット
         itemBuilder: (context, index) {
+          // 1日24時間なので、24で割った余りが時間になる
           final hour = index % 24;
           return Container(
             height: _hourHeight,
@@ -109,7 +107,8 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
             ),
             child: Center(
               child: Text(
-                '${hour.toString().padLeft(2, '0')}:00',
+                // 0時だけは日付も表示する
+                hour == 0 ? '' : '${hour.toString().padLeft(2, '0')}:00',
               ),
             ),
           );
