@@ -1,16 +1,13 @@
-// 必要なファイルをインポートします
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart'; // さっき作成されたファイルです！
+import 'firebase_options.dart';
+import 'presentation/auth/login_screen.dart'; // 作成したファイルをインポート
 
-// main()関数を書き換えて、Firebaseの初期化処理を追加します
 void main() async {
-  // FlutterアプリでFirebaseを動かすためのおまじないです
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-
   runApp(const MyApp());
 }
 
@@ -25,12 +22,8 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      // 動作確認のため、画面中央にメッセージを表示します
-      home: const Scaffold(
-        body: Center(
-          child: Text('Firebase接続完了！'),
-        ),
-      ),
+      // 最初に表示する画面を、さっき作ったLoginScreenに変更します
+      home: const LoginScreen(),
     );
   }
 }
