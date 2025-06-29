@@ -1,6 +1,7 @@
+import 'package:cloud_firestore/cloud_firestore.dart'; // NEW!
+import 'package:firebase_auth/firebase_auth.dart'; // NEW!
 import 'package:flutter/material.dart';
 
-// StatelessWidgetからStatefulWidgetに変更します
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -9,20 +10,42 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // 予定追加ダイアログで使うためのコントローラ
   final _titleController = TextEditingController();
 
-  @override
-  void dispose() {
-    _titleController.dispose();
-    super.dispose();
+  // --- NEW! Firestoreにデータを書き込むメソッド ---
+  Future<void> _addSchedule(String title) async {
+    // 現在ログインしているユーザー情報を取得
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      // もしユーザーがログインしていなかったら、何もしない
+      return;
+    }
+
+    try {
+      // 'schedules'コレクションに新しいドキュメントを追加
+      await FirebaseFirestore.instance.collection('schedules').add({
+        'title': title, // 予定のタイトル
+        'userId': user.uid, // 誰の予定かを示すユーザーID
+        'createdAt': FieldValue.serverTimestamp(), // 作成日時
+        // TODO: is_all_day, start_time, end_timeなども後で追加
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('予定を追加しました。')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('エラーが発生しました: $e')),
+        );
+      }
+    }
   }
 
-  // 予定追加ダイアログを表示するメソッド
   Future<void> _showAddScheduleDialog() async {
-    // ダイアログが表示されるたびに入力欄をクリアする
     _titleController.clear();
-    
     return showDialog(
       context: context,
       builder: (context) {
@@ -35,17 +58,17 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             TextButton(
               child: const Text('キャンセル'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              onPressed: () => Navigator.of(context).pop(),
             ),
             ElevatedButton(
               child: const Text('追加'),
               onPressed: () {
                 final title = _titleController.text;
-                print('追加する予定のタイトル: $title');
-                // TODO: ここでFirestoreへの書き込み処理を呼び出す
-                Navigator.of(context).pop(); // ダイアログを閉じる
+                if (title.isNotEmpty) {
+                  // NEW! タイトルが空でなければ書き込み処理を呼び出す
+                  _addSchedule(title);
+                }
+                Navigator.of(context).pop();
               },
             ),
           ],
@@ -55,22 +78,27 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   @override
+  void dispose() {
+    _titleController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // (buildメソッドの中身は変更なし)
     return Scaffold(
       appBar: AppBar(
         title: const Text('ホーム'),
-        // TODO: ログアウトボタンを後でここに追加します
       ),
       body: const Center(
         child: Text(
-          'ここにスケジュール一覧が表示されます', // メッセージを少し変更
+          'ここにスケジュール一覧が表示されます',
           style: TextStyle(fontSize: 18),
         ),
       ),
-      // 画面右下にフローティングアクションボタンを追加
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddScheduleDialog,
-        tooltip: '予定を追加', // ボタンを長押しした時に表示される説明
+        tooltip: '予定を追加',
         child: const Icon(Icons.add),
       ),
     );
