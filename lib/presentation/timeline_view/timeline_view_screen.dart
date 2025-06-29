@@ -8,12 +8,39 @@ class TimelineViewScreen extends StatefulWidget {
 }
 
 class _TimelineViewScreenState extends State<TimelineViewScreen> {
-  final ScrollController _scrollController = ScrollController();
-  final double _hourHeight = 60.0; // 1時間あたりの高さを定義
+  // --- MODIFIED! 2つのスクロールコントローラーを準備 ---
+  final ScrollController _timeRulerController = ScrollController();
+  final ScrollController _scheduleAreaController = ScrollController();
+  final double _hourHeight = 60.0;
+  final int _totalDays = 730; // 約2年分の日数を定義 (過去1年、未来1年)
+  final int _initialDayIndex = 365; // リストの中での「今日」のインデックス
+
+  @override
+  void initState() {
+    super.initState();
+    // 2つのリストのスクロールを同期させる
+    _timeRulerController.addListener(() {
+      if (_scheduleAreaController.hasClients && _scheduleAreaController.offset != _timeRulerController.offset) {
+        _scheduleAreaController.jumpTo(_timeRulerController.offset);
+      }
+    });
+    _scheduleAreaController.addListener(() {
+      if (_timeRulerController.hasClients && _timeRulerController.offset != _scheduleAreaController.offset) {
+        _timeRulerController.jumpTo(_scheduleAreaController.offset);
+      }
+    });
+
+    // --- NEW! 画面が開いたときに、「今日」の位置までスクロールする ---
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final initialOffset = _initialDayIndex * _hourHeight * 24;
+      _scheduleAreaController.jumpTo(initialOffset);
+    });
+  }
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _timeRulerController.dispose();
+    _scheduleAreaController.dispose();
     super.dispose();
   }
 
@@ -25,22 +52,20 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       ),
       body: Row(
         children: [
-          // --- 左側の時間軸 ---
           _buildTimeRuler(),
-
-          // --- 右側の予定を描画するスクロールエリア ---
           Expanded(
+            // --- MODIFIED! 過去の日付も表示できるようにロジックを変更 ---
             child: ListView.builder(
-              controller: _scrollController,
-              itemCount: 7, // とりあえず7日分表示
+              controller: _scheduleAreaController,
+              itemCount: _totalDays,
               itemBuilder: (context, index) {
-                final day = DateTime.now().add(Duration(days: index));
+                final startDate = DateTime.now().subtract(Duration(days: _initialDayIndex));
+                final day = startDate.add(Duration(days: index));
+                
                 return Container(
-                  height: _hourHeight * 24, // 1日分の高さ
+                  height: _hourHeight * 24,
                   decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(color: Colors.grey.shade300),
-                    ),
+                    border: Border(top: BorderSide(color: Colors.grey.shade300)),
                   ),
                   child: Align(
                     alignment: Alignment.topLeft,
@@ -48,11 +73,14 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
                       padding: const EdgeInsets.all(4.0),
                       child: Text(
                         '${day.month}/${day.day}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          // 今日の日付を分かりやすくする
+                          color: DateUtils.isSameDay(day, DateTime.now()) ? Colors.deepPurple : null,
+                        ),
                       ),
                     ),
                   ),
-                  // TODO: ここに後で、Stackを使って予定ブロックを重ねて描画します
                 );
               },
             ),
@@ -62,15 +90,15 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     );
   }
 
-  // --- 時間軸を生成するウィジェット ---
   Widget _buildTimeRuler() {
     return SizedBox(
-      width: 60, // 時間軸の幅
+      width: 60,
       child: ListView.builder(
-        // 右側のリストとスクロールを同期させる
-        controller: _scrollController,
-        itemCount: 24, // 24時間分
+        controller: _timeRulerController,
+        // --- MODIFIED! 時間軸も日数分生成する ---
+        itemCount: 24 * _totalDays,
         itemBuilder: (context, index) {
+          final hour = index % 24;
           return Container(
             height: _hourHeight,
             decoration: BoxDecoration(
@@ -81,7 +109,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
             ),
             child: Center(
               child: Text(
-                '${index.toString().padLeft(2, '0')}:00', // 13:00のような24時間表記
+                '${hour.toString().padLeft(2, '0')}:00',
               ),
             ),
           );
