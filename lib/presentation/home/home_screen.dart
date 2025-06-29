@@ -1,5 +1,5 @@
-import 'package:cloud_firestore/cloud_firestore.dart'; // NEW!
-import 'package:firebase_auth/firebase_auth.dart'; // NEW!
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -12,89 +12,90 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _titleController = TextEditingController();
 
-  // --- NEW! Firestoreにデータを書き込むメソッド ---
+  // (中略: _addSchedule, _showAddScheduleDialog, dispose メソッドは変更なし)
   Future<void> _addSchedule(String title) async {
-    // 現在ログインしているユーザー情報を取得
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      // もしユーザーがログインしていなかったら、何もしない
-      return;
-    }
-
+    if (user == null) { return; }
     try {
-      // 'schedules'コレクションに新しいドキュメントを追加
       await FirebaseFirestore.instance.collection('schedules').add({
-        'title': title, // 予定のタイトル
-        'userId': user.uid, // 誰の予定かを示すユーザーID
-        'createdAt': FieldValue.serverTimestamp(), // 作成日時
-        // TODO: is_all_day, start_time, end_timeなども後で追加
+        'title': title, 'userId': user.uid, 'createdAt': FieldValue.serverTimestamp(),
       });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('予定を追加しました。')),
-        );
-      }
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('予定を追加しました。'))); }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('エラーが発生しました: $e')),
-        );
-      }
+      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('エラーが発生しました: $e'))); }
     }
   }
-
   Future<void> _showAddScheduleDialog() async {
     _titleController.clear();
-    return showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('予定の追加'),
-          content: TextField(
-            controller: _titleController,
-            decoration: const InputDecoration(hintText: "タイトルを入力"),
-          ),
+    return showDialog(context: context, builder: (context) {
+        return AlertDialog(title: const Text('予定の追加'), content: TextField(controller: _titleController, decoration: const InputDecoration(hintText: "タイトルを入力")),
           actions: [
-            TextButton(
-              child: const Text('キャンセル'),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            ElevatedButton(
-              child: const Text('追加'),
-              onPressed: () {
+            TextButton(child: const Text('キャンセル'), onPressed: () => Navigator.of(context).pop()),
+            ElevatedButton(child: const Text('追加'), onPressed: () {
                 final title = _titleController.text;
-                if (title.isNotEmpty) {
-                  // NEW! タイトルが空でなければ書き込み処理を呼び出す
-                  _addSchedule(title);
-                }
+                if (title.isNotEmpty) { _addSchedule(title); }
                 Navigator.of(context).pop();
-              },
-            ),
+            }),
           ],
         );
-      },
-    );
+    });
   }
-
   @override
-  void dispose() {
-    _titleController.dispose();
-    super.dispose();
-  }
+  void dispose() { _titleController.dispose(); super.dispose(); }
 
+
+  // --- buildメソッドを大幅に書き換えます ---
   @override
   Widget build(BuildContext context) {
-    // (buildメソッドの中身は変更なし)
+    // 現在のユーザー情報を取得
+    final user = FirebaseAuth.instance.currentUser;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('ホーム'),
+        // TODO: ログアウトボタンを後でここに追加します
       ),
-      body: const Center(
-        child: Text(
-          'ここにスケジュール一覧が表示されます',
-          style: TextStyle(fontSize: 18),
-        ),
+      // --- NEW! ここから下がStreamBuilderを使ったリスト表示部分 ---
+      body: StreamBuilder<QuerySnapshot>(
+        // 表示するデータストリーム: ログイン中のユーザーの予定を、作成日時の新しい順に取得
+        stream: FirebaseFirestore.instance
+            .collection('schedules')
+            .where('userId', isEqualTo: user?.uid) // 自分の予定だけをフィルタリング
+            .orderBy('createdAt', descending: true) // 新しいものが上に来るように並び替え
+            .snapshots(), // リアルタイムで監視
+        
+        // データストリームの状態に応じてUIを構築
+        builder: (context, snapshot) {
+          // データ取得中の場合は、くるくる回るローディング表示
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          // エラーが発生した場合
+          if (snapshot.hasError) {
+            return Center(child: Text('エラーが発生しました: ${snapshot.error}'));
+          }
+          // データがまだない、またはドキュメントが0件の場合
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(child: Text('予定はまだありません。'));
+          }
+
+          // データがある場合は、リストとして表示
+          final docs = snapshot.data!.docs;
+          return ListView.builder(
+            itemCount: docs.length,
+            itemBuilder: (context, index) {
+              final doc = docs[index];
+              final data = doc.data() as Map<String, dynamic>;
+              final title = data['title'] as String? ?? 'タイトルなし'; // 安全にタイトルを取得
+
+              // ListTileを使って、各予定をリストの一項目として表示
+              return ListTile(
+                title: Text(title),
+                // TODO: ここに削除ボタンや編集ボタンを追加していく
+              );
+            },
+          );
+        },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddScheduleDialog,
