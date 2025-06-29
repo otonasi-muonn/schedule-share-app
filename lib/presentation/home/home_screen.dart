@@ -24,7 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _showScheduleDialog({DocumentSnapshot? scheduleDoc}) async {
     final isEditing = scheduleDoc != null;
-    final initialData = isEditing ? scheduleDoc!.data() as Map<String, dynamic> : null;
+    final initialData = isEditing ? scheduleDoc.data() as Map<String, dynamic> : null;
     final titleController = TextEditingController(text: initialData?['title'] as String? ?? '');
     final initialStartTimeStamp = initialData?['startTime'] as Timestamp?;
     DateTime selectedDate = initialStartTimeStamp?.toDate() ?? _selectedDay ?? DateTime.now();
@@ -64,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   return;
                 }
                 if (isEditing) {
-                  _updateSchedule(docId: scheduleDoc!.id, title: title, date: selectedDate, isAllDay: isAllDay, startTime: startTime, endTime: endTime);
+                  _updateSchedule(docId: scheduleDoc.id, title: title, date: selectedDate, isAllDay: isAllDay, startTime: startTime, endTime: endTime);
                 } else {
                   _addSchedule(title: title, date: selectedDate, isAllDay: isAllDay, startTime: startTime, endTime: endTime);
                 }
@@ -116,29 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('ホーム（月間）'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.timeline),
-            tooltip: 'タイムラインビュー',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => TimelineViewScreen(
-                    initialDate: _selectedDay ?? DateTime.now(),
-                  ),
-                ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'ログアウト',
-            onPressed: _logout,
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('ホーム（月間）'), actions: [ IconButton(icon: const Icon(Icons.timeline), tooltip: 'タイムラインビュー', onPressed: () { Navigator.of(context).push(MaterialPageRoute(builder: (context) => TimelineViewScreen(initialDate: _selectedDay ?? DateTime.now()))); }), IconButton(icon: const Icon(Icons.logout), tooltip: 'ログアウト', onPressed: _logout) ]),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('schedules').where('userId', isEqualTo: user?.uid).snapshots(),
         builder: (context, snapshot) {
