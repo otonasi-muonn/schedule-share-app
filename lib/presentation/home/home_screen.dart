@@ -12,7 +12,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _titleController = TextEditingController();
 
-  // Firestoreにデータを書き込むメソッド
   Future<void> _addSchedule(String title) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -38,7 +37,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 予定追加ダイアログを表示するメソッド
   Future<void> _showAddScheduleDialog() async {
     _titleController.clear();
     return showDialog(
@@ -71,7 +69,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 予定を削除するメソッド
   Future<void> _deleteSchedule(String docId) async {
     try {
       await FirebaseFirestore.instance.collection('schedules').doc(docId).delete();
@@ -84,7 +81,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // 削除の確認ダイアログを表示するメソッド
   Future<void> _showDeleteConfirmDialog(String docId, String title) async {
     return showDialog(
       context: context,
@@ -109,6 +105,11 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
+  
+  // --- ログアウト処理を行うメソッド ---
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+  }
 
   @override
   void dispose() {
@@ -123,6 +124,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('ホーム'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'ログアウト',
+            onPressed: _logout,
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance

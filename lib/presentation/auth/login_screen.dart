@@ -1,6 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../home/home_screen.dart'; // ホーム画面をインポート
+import '../home/home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,30 +16,19 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    // コントローラにリスナーを追加して、文字の変更を検知
     _emailController.addListener(() => setState(() {}));
     _passwordController.addListener(() => setState(() {}));
   }
 
-  // --- ログイン処理を行うメソッド ---
   Future<void> _login() async {
     try {
       final email = _emailController.text;
       final password = _passwordController.text;
-
-      // Firebase Authでメールとパスワードでログイン
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
-
-      // ログインが成功したら、ホーム画面に遷移
-      if (mounted) {
-        // pushReplacementで、ログイン画面に戻れないようにする
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-        );
-      }
+      // ここにあったNavigatorのコードを削除しました
     } on FirebaseAuthException catch (e) {
       String errorMessage = 'エラーが発生しました。';
       if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
@@ -52,16 +41,12 @@ class _LoginScreenState extends State<LoginScreen> {
           SnackBar(content: Text(errorMessage)),
         );
       }
-    } catch (e) {
-      // その他のエラー
-    }
+    } catch (e) {}
   }
 
-  // --- 新規登録ダイアログを表示するメソッド ---
   Future<void> _showSignUpDialog() async {
     final dialogEmailController = TextEditingController();
     final dialogPasswordController = TextEditingController();
-
     return showDialog(
       context: context,
       builder: (context) {
@@ -110,7 +95,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // --- 新規登録処理を行うメソッド ---
   Future<void> _signUp(String email, String password) async {
     try {
       await FirebaseAuth.instance.createUserWithEmailAndPassword(
@@ -137,9 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
           SnackBar(content: Text(errorMessage)),
         );
       }
-    } catch (e) {
-      // その他のエラー
-    }
+    } catch (e) {}
   }
 
   @override
