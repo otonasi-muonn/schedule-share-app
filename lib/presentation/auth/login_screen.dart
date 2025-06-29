@@ -1,6 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import '../home/home_screen.dart'; // 作成したホーム画面をインポート
+import '../home/home_screen.dart'; // ホーム画面をインポート
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,6 +12,14 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // コントローラにリスナーを追加して、文字の変更を検知
+    _emailController.addListener(() => setState(() {}));
+    _passwordController.addListener(() => setState(() {}));
+  }
 
   // --- ログイン処理を行うメソッド ---
   Future<void> _login() async {
@@ -49,17 +57,14 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-
+  // --- 新規登録ダイアログを表示するメソッド ---
   Future<void> _showSignUpDialog() async {
-    // (この部分は変更なし)
     final dialogEmailController = TextEditingController();
     final dialogPasswordController = TextEditingController();
-    _emailController.clear();
-    _passwordController.clear();
+
     return showDialog(
       context: context,
       builder: (context) {
-        // ... (以下、ダイアログのコードは変更なし)
         return AlertDialog(
           title: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -67,21 +72,36 @@ class _LoginScreenState extends State<LoginScreen> {
               const Text('新規登録'),
               IconButton(
                 icon: const Icon(Icons.close),
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
               ),
             ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: dialogEmailController, decoration: const InputDecoration(labelText: 'メールアドレス'), keyboardType: TextInputType.emailAddress),
+              TextField(
+                controller: dialogEmailController,
+                decoration: const InputDecoration(labelText: 'メールアドレス'),
+                keyboardType: TextInputType.emailAddress,
+              ),
               const SizedBox(height: 16),
-              TextField(controller: dialogPasswordController, obscureText: true, decoration: const InputDecoration(labelText: 'パスワード')),
+              TextField(
+                controller: dialogPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'パスワード'),
+              ),
             ],
           ),
           actions: [
             ElevatedButton(
-              onPressed: () async => await _signUp(dialogEmailController.text, dialogPasswordController.text),
+              onPressed: () async {
+                await _signUp(
+                  dialogEmailController.text,
+                  dialogPasswordController.text,
+                );
+              },
               child: const Text('登録する'),
             ),
           ],
@@ -90,20 +110,33 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  // --- 新規登録処理を行うメソッド ---
   Future<void> _signUp(String email, String password) async {
-    // (この部分は変更なし)
     try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(email: email, password: password);
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
       if (mounted) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ユーザー登録が完了しました。')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ユーザー登録が完了しました。')),
+        );
       }
     } on FirebaseAuthException catch (e) {
       String errorMessage = 'エラーが発生しました。';
-      if (e.code == 'weak-password') { errorMessage = 'パスワードが弱すぎます。'; } 
-      else if (e.code == 'email-already-in-use') { errorMessage = 'このメールアドレスは既に使用されています。'; } 
-      else if (e.code == 'invalid-email') { errorMessage = 'メールアドレスの形式が正しくありません。'; }
-      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage))); }
+      if (e.code == 'weak-password') {
+        errorMessage = 'パスワードが弱すぎます。';
+      } else if (e.code == 'email-already-in-use') {
+        errorMessage = 'このメールアドレスは既に使用されています。';
+      } else if (e.code == 'invalid-email') {
+        errorMessage = 'メールアドレスの形式が正しくありません。';
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMessage)),
+        );
+      }
     } catch (e) {
       // その他のエラー
     }
@@ -127,11 +160,38 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            TextField(controller: _emailController, decoration: const InputDecoration(labelText: 'メールアドレス'), keyboardType: TextInputType.emailAddress),
+            TextField(
+              controller: _emailController,
+              decoration: InputDecoration(
+                labelText: 'メールアドレス',
+                suffixIcon: _emailController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _emailController.clear();
+                        },
+                      )
+                    : null,
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
             const SizedBox(height: 16),
-            TextField(controller: _passwordController, obscureText: true, decoration: const InputDecoration(labelText: 'パスワード')),
+            TextField(
+              controller: _passwordController,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: 'パスワード',
+                suffixIcon: _passwordController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _passwordController.clear();
+                        },
+                      )
+                    : null,
+              ),
+            ),
             const SizedBox(height: 32),
-            // ログインボタンが押されたら_loginメソッドを呼び出す
             ElevatedButton(
               onPressed: _login,
               child: const Text('ログイン'),
