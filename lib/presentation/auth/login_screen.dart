@@ -1,5 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart'; // NEW! Firebase Authをインポート
 import 'package:flutter/material.dart';
+import 'signup_screen.dart'; // 作成した新規登録画面をインポート
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,50 +12,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  // NEW! 新規登録処理を行うメソッド
-  Future<void> _signUp() async {
-    // try-catchでエラー処理を実装
-    try {
-      final email = _emailController.text;
-      final password = _passwordController.text;
-
-      // Firebase Authにユーザーを新規登録
-      final UserCredential userCredential =
-          await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      // 成功した場合のメッセージを画面に表示
-      if (mounted) { // mountedプロパティでウィジェットが有効か確認
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ユーザー登録が完了しました。')),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      // エラーコードに応じたメッセージを画面に表示
-      String errorMessage = 'エラーが発生しました。';
-      if (e.code == 'weak-password') {
-        errorMessage = 'パスワードが弱すぎます。';
-      } else if (e.code == 'email-already-in-use') {
-        errorMessage = 'このメールアドレスは既に使用されています。';
-      } else if (e.code == 'invalid-email') {
-        errorMessage = 'メールアドレスの形式が正しくありません。';
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage)),
-        );
-      }
-    } catch (e) {
-      // その他のエラー
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
-      }
-    }
-  }
+  // _signUpメソッドはここからは削除
 
   @override
   void dispose() {
@@ -77,30 +34,29 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             TextField(
               controller: _emailController,
-              decoration: const InputDecoration(
-                labelText: 'メールアドレス',
-                hintText: 'test@example.com',
-              ),
+              decoration: const InputDecoration(labelText: 'メールアドレス'),
               keyboardType: TextInputType.emailAddress,
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _passwordController,
               obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'パスワード',
-              ),
+              decoration: const InputDecoration(labelText: 'パスワード'),
             ),
             const SizedBox(height: 32),
             ElevatedButton(
               onPressed: () {
-                // TODO: ログイン処理は後でここに書く
+                // TODO: ログイン処理を実装する
               },
               child: const Text('ログイン'),
             ),
             TextButton(
-              // NEW! 新規登録ボタンが押されたら_signUpメソッドを呼び出す
-              onPressed: _signUp,
+              // ボタンが押されたら、SignUpScreenに画面遷移する
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => const SignUpScreen()),
+                );
+              },
               child: const Text('新規登録はこちら'),
             ),
           ],
