@@ -2,7 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:table_calendar/table_calendar.dart'; // ここを修正しました
+import 'package:table_calendar/table_calendar.dart';
+import '../week_view/week_view_screen.dart'; // NEW!
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -113,12 +114,30 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _showDeleteConfirmDialog(String docId, String title) async { return showDialog(context: context, builder: (context) { return AlertDialog(title: const Text('削除の確認'), content: Text('「$title」を本当に削除しますか？\nこの操作は元に戻せません。'), actions: [ TextButton(child: const Text('キャンセル'), onPressed: () => Navigator.of(context).pop()), TextButton(child: const Text('削除', style: TextStyle(color: Colors.red)), onPressed: () { _deleteSchedule(docId); Navigator.of(context).pop(); }), ],); }); }
   Future<void> _logout() async { await FirebaseAuth.instance.signOut(); }
 
-@override
+  @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     return Scaffold(
-      appBar: AppBar(title: const Text('ホーム'), actions: [ IconButton(icon: const Icon(Icons.logout), onPressed: _logout) ]),
-      // --- MODIFIED! StreamBuilderで全体を囲むように変更 ---
+      appBar: AppBar(
+        title: const Text('ホーム（月間）'), // タイトルを少し変更
+        actions: [
+          // --- NEW! 週間ビューに切り替えるボタン ---
+          IconButton(
+            icon: const Icon(Icons.view_week),
+            tooltip: '週間ビュー',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const WeekViewScreen()),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'ログアウト',
+            onPressed: _logout,
+          ),
+        ],
+      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('schedules').where('userId', isEqualTo: user?.uid).snapshots(),
         builder: (context, snapshot) {
