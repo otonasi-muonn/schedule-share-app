@@ -40,50 +40,52 @@ class DefaultFirebaseOptions {
     }
   }
 
-  // 本番環境では環境変数から取得するか、別の安全な方法で管理してください
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'YOUR_WEB_API_KEY',
-    appId: 'YOUR_WEB_APP_ID',
-    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    authDomain: 'YOUR_AUTH_DOMAIN',
-    storageBucket: 'YOUR_STORAGE_BUCKET',
-    measurementId: 'YOUR_MEASUREMENT_ID',
+    apiKey: 'AIzaSyBjHtG8a15c5AlExcLmYDo4u_u8YwjlyL8',
+    appId: '1:431625859855:web:94dc8d228074b23b8cc47a',
+    messagingSenderId: '431625859855',
+    projectId: 'schedule-share-app-bbb37',
+    authDomain: 'schedule-share-app-bbb37.firebaseapp.com',
+    storageBucket: 'schedule-share-app-bbb37.firebasestorage.app',
+    measurementId: 'G-PQDJ87NP86',
   );
 
+  // 本番環境では環境変数から取得するか、別の安全な方法で管理してください
+
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'YOUR_ANDROID_API_KEY',
-    appId: 'YOUR_ANDROID_APP_ID',
-    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    storageBucket: 'YOUR_STORAGE_BUCKET',
+    apiKey: 'AIzaSyACCI_2bTMLXD27mjihCsVP6TTXdng-2Dw',
+    appId: '1:431625859855:android:12c3b1815284de718cc47a',
+    messagingSenderId: '431625859855',
+    projectId: 'schedule-share-app-bbb37',
+    storageBucket: 'schedule-share-app-bbb37.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'YOUR_IOS_API_KEY',
-    appId: 'YOUR_IOS_APP_ID',
-    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    storageBucket: 'YOUR_STORAGE_BUCKET',
+    apiKey: 'AIzaSyDp7_NzXnBHsWMaKnXvy3EaLxcu-Eis1GE',
+    appId: '1:431625859855:ios:a3720571c494d4b68cc47a',
+    messagingSenderId: '431625859855',
+    projectId: 'schedule-share-app-bbb37',
+    storageBucket: 'schedule-share-app-bbb37.firebasestorage.app',
     iosBundleId: 'com.example.scheduleShareApp',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'YOUR_MACOS_API_KEY',
-    appId: 'YOUR_MACOS_APP_ID',
-    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    storageBucket: 'YOUR_STORAGE_BUCKET',
+    apiKey: 'AIzaSyDp7_NzXnBHsWMaKnXvy3EaLxcu-Eis1GE',
+    appId: '1:431625859855:ios:a3720571c494d4b68cc47a',
+    messagingSenderId: '431625859855',
+    projectId: 'schedule-share-app-bbb37',
+    storageBucket: 'schedule-share-app-bbb37.firebasestorage.app',
     iosBundleId: 'com.example.scheduleShareApp',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'YOUR_WINDOWS_API_KEY',
-    appId: 'YOUR_WINDOWS_APP_ID',
-    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    authDomain: 'YOUR_AUTH_DOMAIN',
-    storageBucket: 'YOUR_STORAGE_BUCKET',
-    measurementId: 'YOUR_MEASUREMENT_ID',
+    apiKey: 'AIzaSyBjHtG8a15c5AlExcLmYDo4u_u8YwjlyL8',
+    appId: '1:431625859855:web:a7a3fe2220e0fe0e8cc47a',
+    messagingSenderId: '431625859855',
+    projectId: 'schedule-share-app-bbb37',
+    authDomain: 'schedule-share-app-bbb37.firebaseapp.com',
+    storageBucket: 'schedule-share-app-bbb37.firebasestorage.app',
+    measurementId: 'G-T3JC00R1X9',
   );
+
 }
