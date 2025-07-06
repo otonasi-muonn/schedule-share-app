@@ -6,7 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:collection/collection.dart';
 import 'package:schedule_share_app/presentation/widgets/schedule_dialog.dart';
 
-// 描画イベントのヘルパークラスを修正
+// 描画イベントのヘルパークラス
 class RenderableEvent {
   final DocumentSnapshot doc;
   final DateTime displayStart;
@@ -137,8 +137,12 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     final day = _startDate.add(Duration(days: index ~/ 24));
     final slotStart = DateTime(day.year, day.month, day.day, hour);
     final slotEnd = slotStart.add(const Duration(hours: 1));
-    
-    final eventsInSlot = allRenderableEvents.where((event) => event.displayStart.isBefore(slotEnd) && event.displayEnd.isAfter(slotStart)).toList();
+
+    final eventsInSlot = allRenderableEvents
+        .where((event) =>
+            event.displayStart.isBefore(slotEnd) &&
+            event.displayEnd.isAfter(slotStart))
+        .toList();
 
     return SizedBox(
       height: _hourHeight,
@@ -155,11 +159,16 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
           ),
           Expanded(
             child: Stack(
+              clipBehavior: Clip.none,
               children: [
                 Container(
                   decoration: BoxDecoration(
                     border: Border(
-                      top: BorderSide(color: hour == 0 ? Colors.grey.shade400 : Colors.grey.shade200, width: hour == 0 ? 1.5 : 1.0),
+                      top: BorderSide(
+                          color: hour == 0
+                              ? Colors.grey.shade400
+                              : Colors.grey.shade200,
+                          width: hour == 0 ? 1.5 : 1.0),
                       left: BorderSide(color: Colors.grey.shade300),
                     ),
                   ),
@@ -179,29 +188,54 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     final slotEnd = slotStart.add(const Duration(hours: 1));
     if (now.isBefore(slotStart) || now.isAfter(slotEnd)) return [];
     final topOffset = (now.difference(slotStart).inMinutes / 60.0) * _hourHeight;
-    return [Positioned(top: topOffset, left: -8, right: 0, child: IgnorePointer(child: Row(children: [Icon(Icons.circle, color: Colors.red[700], size: 12), Expanded(child: Container(height: 2, color: Colors.red[700]))])))];
+    return [
+      Positioned(
+        top: topOffset,
+        left: -8,
+        right: 0,
+        child: IgnorePointer(
+          child: Row(
+            children: [
+              Icon(Icons.circle, color: Colors.red[700], size: 12),
+              Expanded(child: Container(height: 2, color: Colors.red[700])),
+            ],
+          ),
+        ),
+      ),
+    ];
   }
 
-  List<Widget> _buildEventBlocks(List<RenderableEvent> events, DateTime slotStart) {
+  List<Widget> _buildEventBlocks(
+      List<RenderableEvent> events, DateTime slotStart) {
     final availableWidth = MediaQuery.of(context).size.width - 60;
     return events.map((event) {
       final data = event.doc.data() as Map<String, dynamic>;
-      final eventStart = event.displayStart.isAfter(slotStart) ? event.displayStart : slotStart;
-      final eventEnd = event.displayEnd.isBefore(slotStart.add(const Duration(hours: 1))) ? event.displayEnd : slotStart.add(const Duration(hours: 1));
-      
-      final topOffset = (eventStart.difference(slotStart).inMinutes / 60.0) * _hourHeight;
-      final height = (eventEnd.difference(eventStart).inMinutes / 60.0) * _hourHeight;
+      final eventStart =
+          event.displayStart.isAfter(slotStart) ? event.displayStart : slotStart;
+      final eventEnd = event.displayEnd
+              .isBefore(slotStart.add(const Duration(hours: 1)))
+          ? event.displayEnd
+          : slotStart.add(const Duration(hours: 1));
+
+      final topOffset =
+          (eventStart.difference(slotStart).inMinutes / 60.0) * _hourHeight;
+      final height =
+          (eventEnd.difference(eventStart).inMinutes / 60.0) * _hourHeight;
       if (height <= 0) return const SizedBox.shrink();
 
       final columnWidth = availableWidth / event.totalColumns;
       final leftOffset = event.column * columnWidth;
-      
+
       return Positioned(
-        top: topOffset, left: leftOffset, width: columnWidth, height: height,
+        top: topOffset,
+        left: leftOffset,
+        width: columnWidth,
+        height: height,
         child: GestureDetector(
           onTap: () => showScheduleDialog(context, scheduleDoc: event.doc),
           child: Container(
-            padding: const EdgeInsets.all(4), margin: const EdgeInsets.symmetric(horizontal: 2),
+            padding: const EdgeInsets.all(4),
+            margin: const EdgeInsets.symmetric(horizontal: 2),
             decoration: BoxDecoration(
               color: Colors.blue,
               border: Border.all(color: Colors.white.withOpacity(0.5), width: 0.5),
@@ -213,7 +247,16 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (event.isFirstPart) Text(data['title'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                if (event.isFirstPart)
+                  Text(
+                    data['title'] ?? '',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
               ],
             ),
           ),
@@ -224,39 +267,53 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
 
   List<RenderableEvent> _calculateLayout(List<QueryDocumentSnapshot> allDocs) {
     List<RenderableEvent> renderableEvents = [];
-    final sortedDocs = List<QueryDocumentSnapshot>.from(allDocs)..sort((a, b) {
-      final aTime = a['startTime'] as Timestamp?; final bTime = b['startTime'] as Timestamp?;
-      if (aTime == null && bTime == null) return 0;
-      if (aTime == null) return 1;
-      if (bTime == null) return -1;
-      return aTime.compareTo(bTime);
-    });
-    
+    final sortedDocs = List<QueryDocumentSnapshot>.from(allDocs)
+      ..sort((a, b) {
+        final aTime = a['startTime'] as Timestamp?;
+        final bTime = b['startTime'] as Timestamp?;
+        if (aTime == null && bTime == null) return 0;
+        if (aTime == null) return 1;
+        if (bTime == null) return -1;
+        return aTime.compareTo(bTime);
+      });
+
     for (final doc in sortedDocs) {
       final data = doc.data() as Map<String, dynamic>;
       if (data['isAllDay'] as bool? ?? false) continue;
-      
+
       final start = (data['startTime'] as Timestamp).toDate();
       final end = (data['endTime'] as Timestamp).toDate();
-      
+
       if (start.isAtSameMomentAs(end)) {
-        renderableEvents.add(RenderableEvent(doc: doc, displayStart: start, displayEnd: start.add(const Duration(minutes: 30)), isFirstPart: true, isLastPart: true));
+        renderableEvents.add(RenderableEvent(
+            doc: doc,
+            displayStart: start,
+            displayEnd: start.add(const Duration(minutes: 30)),
+            isFirstPart: true,
+            isLastPart: true));
         continue;
       }
-      
+
       var current = start;
       bool isFirst = true;
       while (current.isBefore(end)) {
-        final endOfCurrentDay = DateUtils.dateOnly(current).add(const Duration(days: 1));
+        final endOfCurrentDay =
+            DateUtils.dateOnly(current).add(const Duration(days: 1));
         final blockEnd = end.isBefore(endOfCurrentDay) ? end : endOfCurrentDay;
-        // 日またぎの最終ブロックかどうかの判定を修正
-        renderableEvents.add(RenderableEvent(doc: doc, displayStart: current, displayEnd: blockEnd, isFirstPart: isFirst, isLastPart: !end.isAfter(blockEnd)));
+        renderableEvents.add(RenderableEvent(
+          doc: doc,
+          displayStart: current,
+          displayEnd: blockEnd,
+          isFirstPart: isFirst,
+          isLastPart: !end.isAfter(blockEnd),
+        ));
         current = endOfCurrentDay;
         isFirst = false;
       }
     }
 
-    final groupedByDay = groupBy(renderableEvents, (e) => DateUtils.dateOnly(e.displayStart));
+    final groupedByDay =
+        groupBy(renderableEvents, (e) => DateUtils.dateOnly(e.displayStart));
     groupedByDay.forEach((day, eventsOnDay) {
       eventsOnDay.sort((a, b) => a.displayStart.compareTo(b.displayStart));
       final List<List<RenderableEvent>> columns = [];
@@ -264,19 +321,23 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
         bool placed = false;
         for (final col in columns) {
           if (!col.last.displayEnd.isAfter(event.displayStart)) {
-            col.add(event); placed = true; break;
+            col.add(event);
+            placed = true;
+            break;
           }
         }
-        if (!placed) { columns.add([event]); }
+        if (!placed) {
+          columns.add([event]);
+        }
       }
-      for(int i = 0; i < columns.length; i++) {
-        for(final event in columns[i]) {
+      for (int i = 0; i < columns.length; i++) {
+        for (final event in columns[i]) {
           event.column = i;
           event.totalColumns = columns.length;
         }
       }
     });
-    
+
     return renderableEvents;
   }
 }
