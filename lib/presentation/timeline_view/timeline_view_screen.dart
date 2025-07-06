@@ -72,7 +72,9 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
 
     // 現在時刻線を1分ごとに更新
     _currentTimeTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
-      if (mounted) { setState(() {}); }
+      if (mounted) { 
+        setState(() {});
+      }
     });
   }
 
@@ -120,6 +122,8 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   }
 
   void _updateAppBarDate() {
+    if (!mounted) return;
+    
     final centerOffset = _scrollController.offset + (MediaQuery.of(context).size.height / 3);
     final centerDayIndex = (centerOffset / (_hourHeight * 24)).floor();
     
@@ -503,8 +507,10 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     
     final sortedDocs = List<QueryDocumentSnapshot>.from(allDocs)
       ..sort((a, b) {
-        final aStart = a['startTime'] as Timestamp?;
-        final bStart = b['startTime'] as Timestamp?;
+        final aData = a.data() as Map<String, dynamic>;
+        final bData = b.data() as Map<String, dynamic>;
+        final aStart = aData['startTime'] as Timestamp?;
+        final bStart = bData['startTime'] as Timestamp?;
         if (aStart == null && bStart == null) return 0;
         if (aStart == null) return 1;
         if (bStart == null) return -1;
