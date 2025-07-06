@@ -252,7 +252,10 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
 
       final isTopRounded = event.isFirstPart && event.displayStart.isAtSameMomentAs(blockStart);
       final isBottomRounded = event.isLastPart && event.displayEnd.isAtSameMomentAs(blockEnd);
-      final shouldShowTitle = event.isFirstPart;
+      
+      // 修正: タイトルを表示するかどうかの判定を改善
+      // 元の予定の最初の部分かつ、現在の表示ブロックが実際に予定の開始時刻を含んでいる場合のみ表示
+      final shouldShowTitle = event.isFirstPart && event.displayStart.isAtSameMomentAs(blockStart);
 
       return Positioned(
         top: topOffset, left: leftOffset, width: columnWidth, height: height,
