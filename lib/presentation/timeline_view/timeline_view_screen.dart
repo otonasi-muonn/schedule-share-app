@@ -6,13 +6,14 @@ import 'package:intl/intl.dart';
 import 'package:collection/collection.dart';
 import 'package:schedule_share_app/presentation/widgets/schedule_dialog.dart';
 
-// 描画イベントのヘルパークラス
 class RenderableEvent {
   final DocumentSnapshot doc;
   final DateTime displayStart;
   final DateTime displayEnd;
   int column;
   int totalColumns;
+  bool isFirstPart;
+  bool isLastPart;
 
   RenderableEvent({
     required this.doc,
@@ -20,16 +21,14 @@ class RenderableEvent {
     required this.displayEnd,
     this.column = 0,
     this.totalColumns = 1,
+    this.isFirstPart = true,
+    this.isLastPart = true,
   });
 }
 
 class TimelineViewScreen extends StatefulWidget {
   final DateTime initialDate;
-
-  const TimelineViewScreen({
-    super.key,
-    required this.initialDate,
-  });
+  const TimelineViewScreen({super.key, required this.initialDate});
 
   @override
   State<TimelineViewScreen> createState() => _TimelineViewScreenState();
@@ -38,12 +37,11 @@ class TimelineViewScreen extends StatefulWidget {
 class _TimelineViewScreenState extends State<TimelineViewScreen> {
   final ScrollController _scrollController = ScrollController();
   final double _hourHeight = 80.0;
-  final int _totalDays = 61; // 約2ヶ月分
+  final int _totalDays = 61;
   late final DateTime _startDate;
   late final int _initialDayIndex;
-
-  // --- NEW! アプリバーの日付専用の通知役 ---
   late final ValueNotifier<DateTime> _appBarDateNotifier;
+  Timer? _currentTimeTimer;
 
   @override
   void initState() {
@@ -59,13 +57,16 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       }
     });
 
+    _currentTimeTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted) { setState(() {}); }
+    });
+
     _scrollController.addListener(() {
       if (!mounted || !_scrollController.hasClients) return;
-      // 画面上部から1/4の位置を基準に日付を判定
       final centerOffset = _scrollController.offset + (context.size!.height / 4);
       final centerDayIndex = (centerOffset / (_hourHeight * 24)).floor();
+      if (centerDayIndex < 0 || centerDayIndex >= _totalDays) return;
       final newDate = _startDate.add(Duration(days: centerDayIndex));
-      
       if (!DateUtils.isSameDay(_appBarDateNotifier.value, newDate)) {
         _appBarDateNotifier.value = newDate;
       }
@@ -76,6 +77,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   void dispose() {
     _scrollController.dispose();
     _appBarDateNotifier.dispose();
+    _currentTimeTimer?.cancel();
     super.dispose();
   }
 
@@ -84,7 +86,6 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     final user = FirebaseAuth.instance.currentUser;
     return Scaffold(
       appBar: AppBar(
-        // --- MODIFIED! ValueListenableBuilderでタイトルだけを更新 ---
         title: ValueListenableBuilder<DateTime>(
           valueListenable: _appBarDateNotifier,
           builder: (context, value, child) {
@@ -95,12 +96,8 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('schedules').where('userId', isEqualTo: user?.uid).where('startTime', isGreaterThanOrEqualTo: _startDate).where('startTime', isLessThan: _startDate.add(Duration(days: _totalDays))).snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('エラー: ${snapshot.error}'));
-          }
+          if (snapshot.connectionState == ConnectionState.waiting) { return const Center(child: CircularProgressIndicator()); }
+          if (snapshot.hasError) { return Center(child: Text('エラー: ${snapshot.error}')); }
           final allDocs = snapshot.data?.docs ?? [];
           final allRenderableEvents = _calculateLayout(allDocs);
           
@@ -111,6 +108,11 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
                 delegate: SliverChildBuilderDelegate(
                   (context, index) => _buildTimeSlot(index, allRenderableEvents),
                   childCount: _totalDays * 24,
+                  // --- NEW! あなたの指摘通り、itemExtentで高さを固定 ---
+                  findChildIndexCallback: (Key key) {
+                    final valueKey = key as ValueKey<int>;
+                    return valueKey.value;
+                  }
                 ),
               ),
             ],
@@ -129,43 +131,25 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   }
 
   Widget _buildTimeSlot(int index, List<RenderableEvent> allRenderableEvents) {
-    final dayIndex = index ~/ 24;
     final hour = index % 24;
-    final day = _startDate.add(Duration(days: dayIndex));
-    final slotStart = DateTime(day.year, day.month, day.day, hour);
+    final slotStart = _startDate.add(Duration(hours: index));
     final slotEnd = slotStart.add(const Duration(hours: 1));
     
-    final eventsInSlot = allRenderableEvents.where((event) {
-      return event.displayStart.isBefore(slotEnd) && event.displayEnd.isAfter(slotStart);
-    }).toList();
+    final eventsInSlot = allRenderableEvents.where((event) => event.displayStart.isBefore(slotEnd) && event.displayEnd.isAfter(slotStart)).toList();
 
     return SizedBox(
       height: _hourHeight,
       child: Row(
         children: [
-          SizedBox(
-            width: 60,
-            child: Center(
-              child: Text(
-                '${hour.toString().padLeft(2, '0')}:00',
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
-          ),
+          SizedBox(width: 60, child: Center(child: Text('${hour.toString().padLeft(2, '0')}:00', style: const TextStyle(fontSize: 12)))),
           Expanded(
             child: Stack(
-              clipBehavior: Clip.none,
               children: [
-                Container(decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade200), left: BorderSide(color: Colors.grey.shade300)))),
+                Container(decoration: BoxDecoration(
+                  // --- MODIFIED! 日付の区切り線を少しだけ目立たせる ---
+                  border: Border(top: BorderSide(color: Colors.grey.shade200, width: hour == 0 ? 1.5 : 1.0), left: BorderSide(color: Colors.grey.shade300))
+                )),
                 ..._buildEventBlocks(eventsInSlot, slotStart),
-                if (hour == 0)
-                  Positioned(
-                    top: 4, left: 4,
-                    child: Text(
-                      '${day.month}/${day.day} (${DateFormat.E('ja').format(day)})',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: DateUtils.isSameDay(day, widget.initialDate) ? Colors.deepPurple : null, backgroundColor: Theme.of(context).scaffoldBackgroundColor.withAlpha(200)),
-                    ),
-                  ),
                 ..._buildCurrentTimeIndicator(slotStart),
               ],
             ),
@@ -197,9 +181,6 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       final columnWidth = availableWidth / event.totalColumns;
       final leftOffset = event.column * columnWidth;
 
-      final originalStart = (data['startTime'] as Timestamp).toDate();
-      final bool isFirstPart = DateUtils.isSameDay(event.displayStart, originalStart) && event.displayStart.hour == originalStart.hour && event.displayStart.minute == originalStart.minute;
-      
       return Positioned(
         top: topOffset, left: leftOffset, width: columnWidth, height: height,
         child: GestureDetector(
@@ -207,16 +188,19 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
           child: Container(
             padding: const EdgeInsets.all(4), margin: const EdgeInsets.symmetric(horizontal: 2),
             decoration: BoxDecoration(
-              color: Colors.blue.withAlpha(200),
+              // --- MODIFIED! 不透明にし、枠線を追加 ---
+              color: Colors.blue,
+              border: Border.all(color: Colors.white.withOpacity(0.5), width: 0.5),
               borderRadius: BorderRadius.vertical(
-                top: isFirstPart ? const Radius.circular(4) : Radius.zero,
-                bottom: (event.displayEnd.hour == 23 && event.displayEnd.minute == 59) || DateUtils.isSameDay(event.displayEnd, (data['endTime'] as Timestamp).toDate()) ? const Radius.circular(4) : Radius.zero,
+                top: event.isFirstPart ? const Radius.circular(4) : Radius.zero,
+                bottom: event.isLastPart ? const Radius.circular(4) : Radius.zero,
               ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (isFirstPart) Text(data['title'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                // --- MODIFIED! 最初のブロックにだけタイトルを表示 ---
+                if (event.isFirstPart) Text(data['title'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
               ],
             ),
           ),
@@ -227,27 +211,25 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
 
   List<RenderableEvent> _calculateLayout(List<QueryDocumentSnapshot> allDocs) {
     List<RenderableEvent> renderableEvents = [];
-    final sortedDocs = List<QueryDocumentSnapshot>.from(allDocs);
-    sortedDocs.sort((a, b) => (a['startTime'] as Timestamp).compareTo(b['startTime'] as Timestamp));
+    allDocs.sort((a, b) => (a['startTime'] as Timestamp).compareTo(b['startTime'] as Timestamp));
     
-    for (final doc in sortedDocs) {
+    for (final doc in allDocs) {
       final data = doc.data() as Map<String, dynamic>;
       if (data['isAllDay'] as bool? ?? false) continue;
-      
       final start = (data['startTime'] as Timestamp).toDate();
       final end = (data['endTime'] as Timestamp).toDate();
-      
       if (start.isAtSameMomentAs(end)) {
-        renderableEvents.add(RenderableEvent(doc: doc, displayStart: start, displayEnd: start.add(const Duration(minutes: 30))));
+        renderableEvents.add(RenderableEvent(doc: doc, displayStart: start, displayEnd: start.add(const Duration(minutes: 30)), isFirstPart: true, isLastPart: true));
         continue;
       }
-      
       var current = start;
+      bool isFirst = true;
       while (current.isBefore(end)) {
         final endOfCurrentDay = DateUtils.dateOnly(current).add(const Duration(days: 1));
         final blockEnd = end.isBefore(endOfCurrentDay) ? end : endOfCurrentDay;
-        renderableEvents.add(RenderableEvent(doc: doc, displayStart: current, displayEnd: blockEnd));
+        renderableEvents.add(RenderableEvent(doc: doc, displayStart: current, displayEnd: blockEnd, isFirstPart: isFirst, isLastPart: blockEnd.isAtSameMomentAs(end)));
         current = endOfCurrentDay;
+        isFirst = false;
       }
     }
 
@@ -271,7 +253,6 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
         }
       }
     });
-    
     return renderableEvents;
   }
 }
