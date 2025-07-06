@@ -19,8 +19,8 @@ dependencies:
 
   # Calendar UI & Helpers
   table_calendar: ^3.1.2
-  collection: ^1.18.0             # データ処理に必須
-  intl: ^0.20.2                   # 日付フォーマットに必須
+  collection: ^1.18.0
+  intl: ^0.20.2
 
   # Default
   cupertino_icons: ^1.0.6

@@ -9,21 +9,23 @@ import 'package:schedule_share_app/presentation/widgets/schedule_dialog.dart';
 // 描画イベントのヘルパークラス
 class RenderableEvent {
   final DocumentSnapshot doc;
+  final DateTime originalStart;
+  final DateTime originalEnd;
   final DateTime displayStart;
   final DateTime displayEnd;
   int column;
   int totalColumns;
-  final bool isFirstPart;
-  final bool isLastPart;
+  final bool isAllDay;
 
   RenderableEvent({
     required this.doc,
+    required this.originalStart,
+    required this.originalEnd,
     required this.displayStart,
     required this.displayEnd,
     this.column = 0,
     this.totalColumns = 1,
-    required this.isFirstPart,
-    required this.isLastPart,
+    this.isAllDay = false,
   });
 }
 
@@ -38,6 +40,8 @@ class TimelineViewScreen extends StatefulWidget {
 class _TimelineViewScreenState extends State<TimelineViewScreen> {
   final ScrollController _scrollController = ScrollController();
   final double _hourHeight = 80.0;
+  final int _initialLoadDays = 7; // 初期読み込み日数（前後）
+  final int _loadMoreDays = 7; // 追加読み込み日数
   
   // 動的に読み込むための状態管理
   List<DateTime> _loadedDays = [];
@@ -45,26 +49,22 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   bool _isLoadingBottom = false;
   late final ValueNotifier<DateTime> _appBarDateNotifier;
   Timer? _currentTimeTimer;
+  bool _initialScrollDone = false;
 
   @override
   void initState() {
     super.initState();
     _appBarDateNotifier = ValueNotifier(widget.initialDate);
     
-    // 初期表示の日付範囲を設定
-    for (int i = -7; i <= 7; i++) {
-      _loadedDays.add(DateUtils.dateOnly(widget.initialDate).add(Duration(days: i)));
+    // 初期表示の日付範囲を設定（指定日の前後7日）
+    final baseDate = DateUtils.dateOnly(widget.initialDate);
+    for (int i = -_initialLoadDays; i <= _initialLoadDays; i++) {
+      _loadedDays.add(baseDate.add(Duration(days: i)));
     }
     
     // 画面が開いたときに、指定された日の位置までスクロール
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _scrollController.hasClients) {
-        final initialDayIndex = _loadedDays.indexWhere((day) => DateUtils.isSameDay(day, widget.initialDate));
-        if (initialDayIndex != -1) {
-          final initialOffset = (initialDayIndex * _hourHeight * 24) + (_hourHeight * 7);
-          _scrollController.jumpTo(initialOffset);
-        }
-      }
+      _scrollToInitialPosition();
     });
 
     // スクロールを監視して、動的にデータを読み込む
@@ -85,53 +85,92 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     super.dispose();
   }
 
+  void _scrollToInitialPosition() {
+    if (!mounted || !_scrollController.hasClients) return;
+    
+    final initialDayIndex = _loadedDays.indexWhere(
+      (day) => DateUtils.isSameDay(day, widget.initialDate)
+    );
+    
+    if (initialDayIndex != -1) {
+      // 指定された日の朝7時の位置にスクロール
+      final initialOffset = (initialDayIndex * _hourHeight * 24) + (_hourHeight * 7);
+      _scrollController.jumpTo(initialOffset);
+      _initialScrollDone = true;
+    }
+  }
+
   void _scrollListener() {
     if (!mounted || !_scrollController.hasClients) return;
     
     // アプリバーの日付を更新
+    _updateAppBarDate();
+    
+    // 一番下近くまでスクロールしたら、未来のデータを読み込む
+    if (!_isLoadingBottom && 
+        _scrollController.position.pixels >= 
+        _scrollController.position.maxScrollExtent - 2000) {
+      _loadMoreDays(isTop: false);
+    }
+
+    // 一番上近くまでスクロールしたら、過去のデータを読み込む
+    if (!_isLoadingTop && _scrollController.position.pixels <= 2000) {
+      _loadMoreDays(isTop: true);
+    }
+  }
+
+  void _updateAppBarDate() {
     final centerOffset = _scrollController.offset + (MediaQuery.of(context).size.height / 3);
     final centerDayIndex = (centerOffset / (_hourHeight * 24)).floor();
+    
     if (centerDayIndex >= 0 && centerDayIndex < _loadedDays.length) {
       final newDate = _loadedDays[centerDayIndex];
       if (!DateUtils.isSameDay(_appBarDateNotifier.value, newDate)) {
         _appBarDateNotifier.value = newDate;
       }
     }
+  }
 
-    // 一番下近くまでスクロールしたら、未来のデータを読み込む
-    if (!_isLoadingBottom && _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 2000) {
-      setState(() { _isLoadingBottom = true; });
-      final lastDay = _loadedDays.last;
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          setState(() {
-            for (int i = 1; i <= 7; i++) {
-              _loadedDays.add(lastDay.add(Duration(days: i)));
-            }
-            _isLoadingBottom = false;
-          });
-        }
-      });
-    }
-
-    // 一番上近くまでスクロールしたら、過去のデータを読み込む
-    if (!_isLoadingTop && _scrollController.position.pixels <= 2000) {
+  Future<void> _loadMoreDays({required bool isTop}) async {
+    if (isTop) {
       setState(() { _isLoadingTop = true; });
-      final firstDay = _loadedDays.first;
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          final newDays = [for (int i = 7; i >= 1; i--) firstDay.subtract(Duration(days: i))];
-          setState(() {
-            _loadedDays.insertAll(0, newDays);
-            _isLoadingTop = false;
-          });
-          // 読み込んだ分だけスクロール位置を調整して、ガクンとなるのを防ぐ
-          if (_scrollController.hasClients) {
-            _scrollController.jumpTo(_scrollController.offset + (7 * _hourHeight * 24));
-          }
-        }
-      });
+    } else {
+      setState(() { _isLoadingBottom = true; });
     }
+
+    // 少し遅延を入れて、スムーズなスクロール体験を提供
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    if (!mounted) return;
+
+    setState(() {
+      if (isTop) {
+        // 過去のデータを読み込み
+        final firstDay = _loadedDays.first;
+        final newDays = [
+          for (int i = _loadMoreDays; i >= 1; i--) 
+            firstDay.subtract(Duration(days: i))
+        ];
+        _loadedDays.insertAll(0, newDays);
+        _isLoadingTop = false;
+        
+        // スクロール位置を調整して、ガクンとなるのを防ぐ
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            _scrollController.jumpTo(
+              _scrollController.offset + (_loadMoreDays * _hourHeight * 24)
+            );
+          }
+        });
+      } else {
+        // 未来のデータを読み込み
+        final lastDay = _loadedDays.last;
+        for (int i = 1; i <= _loadMoreDays; i++) {
+          _loadedDays.add(lastDay.add(Duration(days: i)));
+        }
+        _isLoadingBottom = false;
+      }
+    });
   }
 
   @override
@@ -141,8 +180,17 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       appBar: AppBar(
         title: ValueListenableBuilder<DateTime>(
           valueListenable: _appBarDateNotifier,
-          builder: (context, value, child) => Text(DateFormat('yyyy年 M月d日 (E)', 'ja').format(value)),
+          builder: (context, value, child) => Text(
+            DateFormat('yyyy年 M月d日 (E)', 'ja').format(value)
+          ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.today),
+            tooltip: '今日に移動',
+            onPressed: _scrollToToday,
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -156,38 +204,92 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
           if (snapshot.hasError) {
             return Center(child: Text('エラー: ${snapshot.error}'));
           }
+          
           final allDocs = snapshot.data?.docs ?? [];
           final allRenderableEvents = _calculateLayout(allDocs);
           
-          return CustomScrollView(
-            controller: _scrollController,
-            slivers: [
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _buildTimeSlot(index, allRenderableEvents),
-                  childCount: _loadedDays.length * 24,
-                ),
+          return Stack(
+            children: [
+              CustomScrollView(
+                controller: _scrollController,
+                slivers: [
+                  if (_isLoadingTop)
+                    const SliverToBoxAdapter(
+                      child: Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                    ),
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => _buildTimeSlot(index, allRenderableEvents),
+                      childCount: _loadedDays.length * 24,
+                    ),
+                  ),
+                  if (_isLoadingBottom)
+                    const SliverToBoxAdapter(
+                      child: Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                    ),
+                ],
               ),
+              // 現在時刻の表示
+              _buildCurrentTimeDisplay(),
             ],
           );
         },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          final initialDayIndex = _loadedDays.indexWhere((day) => DateUtils.isSameDay(day, widget.initialDate));
-          if (initialDayIndex != -1) {
-            final targetOffset = (initialDayIndex * _hourHeight * 24) + (_hourHeight * 7);
-            _scrollController.animateTo(
-              targetOffset,
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOut,
-            );
-          }
+          showScheduleDialog(context, initialDate: _appBarDateNotifier.value);
         },
-        tooltip: '指定日に移動',
-        child: const Icon(Icons.center_focus_strong),
+        tooltip: '予定を追加',
+        child: const Icon(Icons.add),
       ),
     );
+  }
+
+  Widget _buildCurrentTimeDisplay() {
+    final now = DateTime.now();
+    return Positioned(
+      top: 16,
+      right: 16,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.red[700],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          DateFormat('HH:mm').format(now),
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _scrollToToday() {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final todayIndex = _loadedDays.indexWhere((day) => DateUtils.isSameDay(day, today));
+    
+    if (todayIndex != -1) {
+      final targetOffset = (todayIndex * _hourHeight * 24) + (_hourHeight * DateTime.now().hour);
+      _scrollController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   Widget _buildTimeSlot(int index, List<RenderableEvent> allRenderableEvents) {
@@ -197,41 +299,59 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     
     final day = _loadedDays[dayIndex];
     final slotStart = DateTime(day.year, day.month, day.day, hour);
+    final slotEnd = slotStart.add(const Duration(hours: 1));
     
+    // この時間スロットに表示される予定を抽出
     final eventsInSlot = allRenderableEvents.where((event) {
-      final slotEnd = slotStart.add(const Duration(hours: 1));
-      return event.displayStart.isBefore(slotEnd) && event.displayEnd.isAfter(slotStart);
+      return !event.isAllDay && 
+             event.displayStart.isBefore(slotEnd) && 
+             event.displayEnd.isAfter(slotStart);
     }).toList();
 
     return SizedBox(
       height: _hourHeight,
       child: Row(
         children: [
+          // 時刻表示部分
           SizedBox(
             width: 60,
-            child: Center(
-              child: Text(
-                '${hour.toString().padLeft(2, '0')}:00',
-                style: const TextStyle(fontSize: 12),
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  right: BorderSide(color: Colors.grey.shade300),
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  '${hour.toString().padLeft(2, '0')}:00',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: hour == 0 ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
               ),
             ),
           ),
+          // タイムライン部分
           Expanded(
             child: Stack(
               children: [
+                // 背景のグリッド
                 Container(
                   decoration: BoxDecoration(
                     border: Border(
                       top: BorderSide(
                         color: hour == 0 ? Colors.grey.shade400 : Colors.grey.shade200,
-                        width: hour == 0 ? 1.5 : 1.0,
+                        width: hour == 0 ? 1.5 : 0.5,
                       ),
-                      left: BorderSide(color: Colors.grey.shade300),
                     ),
                   ),
                 ),
-                ..._buildEventBlocks(eventsInSlot, slotStart),
-                ..._buildCurrentTimeIndicator(slotStart),
+                // 予定ブロック
+                ..._buildEventBlocks(eventsInSlot, slotStart, slotEnd),
+                // 現在時刻の線
+                ..._buildCurrentTimeIndicator(slotStart, slotEnd),
               ],
             ),
           ),
@@ -240,9 +360,8 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     );
   }
 
-  List<Widget> _buildCurrentTimeIndicator(DateTime slotStart) {
+  List<Widget> _buildCurrentTimeIndicator(DateTime slotStart, DateTime slotEnd) {
     final now = DateTime.now();
-    final slotEnd = slotStart.add(const Duration(hours: 1));
     
     if (now.isBefore(slotStart) || now.isAfter(slotEnd)) {
       return [];
@@ -252,13 +371,20 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     
     return [
       Positioned(
-        top: topOffset,
-        left: -8,
+        top: topOffset - 1,
+        left: 0,
         right: 0,
         child: IgnorePointer(
           child: Row(
             children: [
-              Icon(Icons.circle, color: Colors.red[700], size: 12),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Colors.red[700],
+                  shape: BoxShape.circle,
+                ),
+              ),
               Expanded(
                 child: Container(
                   height: 2,
@@ -272,61 +398,104 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     ];
   }
 
-  List<Widget> _buildEventBlocks(List<RenderableEvent> events, DateTime slotStart) {
+  List<Widget> _buildEventBlocks(List<RenderableEvent> events, DateTime slotStart, DateTime slotEnd) {
     final availableWidth = MediaQuery.of(context).size.width - 60;
     
     return events.map((event) {
       final data = event.doc.data() as Map<String, dynamic>;
-      final eventStart = event.displayStart.isAfter(slotStart) ? event.displayStart : slotStart;
-      final eventEnd = event.displayEnd.isBefore(slotStart.add(const Duration(hours: 1))) 
-          ? event.displayEnd 
-          : slotStart.add(const Duration(hours: 1));
       
-      final topOffset = (eventStart.difference(slotStart).inMinutes / 60.0) * _hourHeight;
-      final height = (eventEnd.difference(eventStart).inMinutes / 60.0) * _hourHeight;
+      // このスロット内での実際の開始・終了時刻を計算
+      final blockStart = event.displayStart.isAfter(slotStart) ? event.displayStart : slotStart;
+      final blockEnd = event.displayEnd.isBefore(slotEnd) ? event.displayEnd : slotEnd;
+      
+      final topOffset = (blockStart.difference(slotStart).inMinutes / 60.0) * _hourHeight;
+      final height = (blockEnd.difference(blockStart).inMinutes / 60.0) * _hourHeight;
       
       if (height <= 0) return const SizedBox.shrink();
 
       final columnWidth = availableWidth / event.totalColumns;
       final leftOffset = event.column * columnWidth;
 
+      // 角丸の判定
+      final isTopRounded = event.displayStart.isAtSameMomentAs(blockStart);
+      final isBottomRounded = event.displayEnd.isAtSameMomentAs(blockEnd);
+      
+      // タイトル表示の判定
+      final shouldShowTitle = event.originalStart.isAtSameMomentAs(blockStart);
+
       return Positioned(
         top: topOffset,
-        left: leftOffset,
-        width: columnWidth,
+        left: leftOffset + 2,
+        width: columnWidth - 4,
         height: height,
         child: GestureDetector(
           onTap: () => showScheduleDialog(context, scheduleDoc: event.doc),
           child: Container(
-            padding: const EdgeInsets.all(4),
-            margin: const EdgeInsets.symmetric(horizontal: 2),
             decoration: BoxDecoration(
-              color: Colors.blue,
-              border: Border.all(color: Colors.white.withOpacity(0.5), width: 0.5),
-              borderRadius: BorderRadius.vertical(
-                top: event.isFirstPart ? const Radius.circular(4) : Radius.zero,
-                bottom: event.isLastPart ? const Radius.circular(4) : Radius.zero,
+              color: _getEventColor(data),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.8), 
+                width: 0.5
               ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (event.isFirstPart)
-                  Text(
-                    data['title'] ?? '',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+              borderRadius: BorderRadius.vertical(
+                top: isTopRounded ? const Radius.circular(6) : Radius.zero,
+                bottom: isBottomRounded ? const Radius.circular(6) : Radius.zero,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 2,
+                  offset: const Offset(0, 1),
+                ),
               ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (shouldShowTitle) ...[
+                    Text(
+                      data['title'] ?? '',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    if (height > 24) // 高さが十分ある場合のみ時刻を表示
+                      Text(
+                        _formatEventTime(event.originalStart, event.originalEnd),
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.9),
+                          fontSize: 10,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),
       );
     }).toList();
+  }
+
+  Color _getEventColor(Map<String, dynamic> data) {
+    // 予定の種類やカテゴリに応じて色を変える（将来的な拡張用）
+    return Colors.blue.shade600;
+  }
+
+  String _formatEventTime(DateTime start, DateTime end) {
+    if (DateUtils.isSameDay(start, end)) {
+      return '${DateFormat.Hm().format(start)} - ${DateFormat.Hm().format(end)}';
+    } else {
+      return '${DateFormat.Hm().format(start)} - ${DateFormat('M/d H:mm').format(end)}';
+    }
   }
 
   List<RenderableEvent> _calculateLayout(List<QueryDocumentSnapshot> allDocs) {
@@ -344,9 +513,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     
     for (final doc in sortedDocs) {
       final data = doc.data() as Map<String, dynamic>;
-      
-      // 終日イベントはスキップ
-      if (data['isAllDay'] as bool? ?? false) continue;
+      final isAllDay = data['isAllDay'] as bool? ?? false;
       
       final startTimestamp = data['startTime'] as Timestamp?;
       final endTimestamp = data['endTime'] as Timestamp?;
@@ -357,39 +524,33 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       final end = endTimestamp.toDate();
       
       // 同じ時刻の場合は30分間のブロックとして扱う
-      if (start.isAtSameMomentAs(end)) {
-        renderableEvents.add(
-          RenderableEvent(
-            doc: doc,
-            displayStart: start,
-            displayEnd: start.add(const Duration(minutes: 30)),
-            isFirstPart: true,
-            isLastPart: true,
-          ),
-        );
+      final effectiveEnd = start.isAtSameMomentAs(end) ? 
+        start.add(const Duration(minutes: 30)) : end;
+      
+      if (isAllDay) {
+        // 終日イベントは現在はスキップ（将来的には別途表示）
         continue;
       }
       
       // 複数日にまたがるイベントを日ごとに分割
       var current = start;
-      bool isFirst = true;
       
-      while (current.isBefore(end)) {
+      while (current.isBefore(effectiveEnd)) {
         final endOfCurrentDay = DateUtils.dateOnly(current).add(const Duration(days: 1));
-        final blockEnd = end.isBefore(endOfCurrentDay) ? end : endOfCurrentDay;
+        final blockEnd = effectiveEnd.isBefore(endOfCurrentDay) ? effectiveEnd : endOfCurrentDay;
         
         renderableEvents.add(
           RenderableEvent(
             doc: doc,
+            originalStart: start,
+            originalEnd: effectiveEnd,
             displayStart: current,
             displayEnd: blockEnd,
-            isFirstPart: isFirst,
-            isLastPart: !end.isAfter(blockEnd),
+            isAllDay: isAllDay,
           ),
         );
         
         current = endOfCurrentDay;
-        isFirst = false;
       }
     }
 
@@ -404,6 +565,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       for (final event in eventsOnDay) {
         bool placed = false;
         
+        // 既存のカラムで重複しないものを探す
         for (final col in columns) {
           if (!col.last.displayEnd.isAfter(event.displayStart)) {
             col.add(event);
@@ -412,6 +574,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
           }
         }
         
+        // 重複しないカラムが見つからなければ新しいカラムを作成
         if (!placed) {
           columns.add([event]);
         }
