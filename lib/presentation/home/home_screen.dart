@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'package:schedule_share_app/presentation/friends/friends_hub_screen.dart'; // NEW!
+import 'package:schedule_share_app/presentation/friends/friends_hub_screen.dart';
 import 'package:schedule_share_app/presentation/timeline_view/timeline_view_screen.dart';
 import 'package:schedule_share_app/presentation/widgets/schedule_dialog.dart';
 
@@ -24,9 +24,42 @@ class _HomeScreenState extends State<HomeScreen> {
     _selectedDay = _focusedDay;
   }
 
-  Future<void> _deleteSchedule(String docId) async { /* ... */ }
-  Future<void> _showDeleteConfirmDialog(String docId, String title) async { /* ... */ }
-  Future<void> _logout() async { /* ... */ }
+  Future<void> _deleteSchedule(String docId) async {
+    try {
+      await FirebaseFirestore.instance.collection('schedules').doc(docId).delete();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('予定を削除しました。')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('削除中にエラーが発生しました: $e')));
+      }
+    }
+  }
+
+  Future<void> _showDeleteConfirmDialog(String docId, String title) async {
+    return showDialog(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('削除の確認'),
+            content: Text('「$title」を本当に削除しますか？\nこの操作は元に戻せません。'),
+            actions: [
+              TextButton(child: const Text('キャンセル'), onPressed: () => Navigator.of(dialogContext).pop()),
+              TextButton(child: const Text('削除', style: TextStyle(color: Colors.red)), onPressed: () {
+                _deleteSchedule(docId);
+                if (mounted) {
+                  Navigator.of(dialogContext).pop();
+                }
+              }),
+            ],
+          );
+        });
+  }
+
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
           return buildCalendarAndList(snapshot.data!.docs);
         },
       ),
-      // --- MODIFIED! 友達画面へのボタンを追加 ---
+      // --- MODIFIED! 友達画面へのボタンを正しく再設置 ---
       floatingActionButton: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -56,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.of(context).push(MaterialPageRoute(builder: (context) => const FriendsHubScreen()));
             },
             tooltip: '友達',
-            heroTag: 'friends_button', // 複数のFABを区別するため
+            heroTag: 'friends_button', // 複数のFABを区別するためのタグ
             child: const Icon(Icons.people),
           ),
           const SizedBox(width: 16),
@@ -65,7 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
               showScheduleDialog(context, initialDate: _selectedDay);
             },
             tooltip: '予定を追加',
-            heroTag: 'add_schedule_button',
+            heroTag: 'add_schedule_button', // 複数のFABを区別するためのタグ
             child: const Icon(Icons.add),
           ),
         ],
@@ -77,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final events = <DateTime, List<dynamic>>{};
     for (final doc in allDocs) {
       final data = doc.data();
-      if (data is Map<String, dynamic>) {
+      if (data is Map<String, dynamic> && data.containsKey('startTime')) {
         final startTime = data['startTime'] as Timestamp?;
         if (startTime != null) {
           final date = DateTime.utc(startTime.toDate().year, startTime.toDate().month, startTime.toDate().day);
@@ -87,11 +120,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final filteredDocs = allDocs.where((doc) {
-      if (_selectedDay == null) {
-        return true;
-      }
+      if (_selectedDay == null) { return true; }
       final data = doc.data();
-      if (data is Map<String, dynamic>) {
+      if (data is Map<String, dynamic> && data.containsKey('startTime')) {
         final startTime = data['startTime'] as Timestamp?;
         return startTime != null && isSameDay(startTime.toDate(), _selectedDay);
       }
@@ -100,8 +131,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ..sort((a, b) {
         final aData = a.data() as Map<String, dynamic>;
         final bData = b.data() as Map<String, dynamic>;
-        final aTime = aData['startTime'] as Timestamp?;
-        final bTime = bData['startTime'] as Timestamp?;
+        final aTime = aData.containsKey('startTime') ? aData['startTime'] as Timestamp? : null;
+        final bTime = bData.containsKey('startTime') ? bData['startTime'] as Timestamp? : null;
         if (aTime == null && bTime == null) return 0;
         if (aTime == null) return 1;
         if (bTime == null) return -1;
@@ -118,58 +149,42 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
         onDaySelected: (selectedDay, focusedDay) {
           setState(() {
-            if (isSameDay(_selectedDay, selectedDay)) {
-              _selectedDay = null;
-            } else {
-              _selectedDay = selectedDay;
-              _focusedDay = focusedDay;
-            }
+            if (isSameDay(_selectedDay, selectedDay)) { _selectedDay = null; } 
+            else { _selectedDay = selectedDay; _focusedDay = focusedDay; }
           });
         },
         calendarStyle: const CalendarStyle(todayDecoration: BoxDecoration(color: Colors.orange, shape: BoxShape.circle), selectedDecoration: BoxDecoration(color: Colors.deepPurple, shape: BoxShape.circle)),
-        eventLoader: (day) {
-          return events[DateTime.utc(day.year, day.month, day.day)] ?? [];
-        },
+        eventLoader: (day) { return events[DateTime.utc(day.year, day.month, day.day)] ?? []; },
       ),
       const SizedBox(height: 8.0),
       Expanded(
-        child: filteredDocs.isEmpty
+        child: filteredDocs.isEmpty 
             ? Center(child: Text(_selectedDay != null ? 'この日の予定はありません。' : 'すべての予定'))
             : ListView.builder(
-          itemCount: filteredDocs.length,
-          itemBuilder: (context, index) {
-            final doc = filteredDocs[index];
-            final data = doc.data() as Map<String, dynamic>;
-            final title = data['title'] as String? ?? 'タイトルなし';
-            final isAllDay = data['isAllDay'] as bool? ?? false;
-            final startTime = data['startTime'] as Timestamp?;
-            final endTime = data['endTime'] as Timestamp?;
-            String timeText;
-            if (isAllDay) {
-              timeText = '終日';
-            } else if (startTime != null && endTime != null) {
-              if (!isSameDay(startTime.toDate(), endTime.toDate())) {
-                timeText = '${DateFormat.Hm().format(startTime.toDate())} - ${DateFormat('M/d H:mm').format(endTime.toDate())}';
-              } else {
-                timeText = '${DateFormat.Hm().format(startTime.toDate())} - ${DateFormat.Hm().format(endTime.toDate())}';
-              }
-            } else {
-              timeText = '時刻未設定';
-            }
-            final dateText = startTime != null ? DateFormat('M月d日').format(startTime.toDate()) : '日付未設定';
-            return ListTile(
-              leading: Text(dateText, style: const TextStyle(fontWeight: FontWeight.bold)),
-              title: Text(title),
-              subtitle: Text(timeText),
-              onTap: () {
-                showScheduleDialog(context, scheduleDoc: doc);
-              },
-              trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () {
-                _showDeleteConfirmDialog(doc.id, title);
-              }),
-            );
-          },
-        ),
+                itemCount: filteredDocs.length,
+                itemBuilder: (context, index) {
+                  final doc = filteredDocs[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final title = data['title'] as String? ?? 'タイトルなし';
+                  final isAllDay = data['isAllDay'] as bool? ?? false;
+                  final startTime = data['startTime'] as Timestamp?;
+                  final endTime = data['endTime'] as Timestamp?;
+                  String timeText;
+                  if (isAllDay) { timeText = '終日'; } 
+                  else if (startTime != null && endTime != null) {
+                    if (!isSameDay(startTime.toDate(), endTime.toDate())) { timeText = '${DateFormat.Hm().format(startTime.toDate())} - ${DateFormat('M/d H:mm').format(endTime.toDate())}'; } 
+                    else { timeText = '${DateFormat.Hm().format(startTime.toDate())} - ${DateFormat.Hm().format(endTime.toDate())}'; }
+                  } else { timeText = '時刻未設定'; }
+                  final dateText = startTime != null ? DateFormat('M月d日').format(startTime.toDate()) : '日付未設定';
+                  return ListTile(
+                    leading: Text(dateText, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text(title),
+                    subtitle: Text(timeText),
+                    onTap: () { showScheduleDialog(context, scheduleDoc: doc); },
+                    trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () { _showDeleteConfirmDialog(doc.id, title); }),
+                  );
+                },
+              ),
       ),
     ]);
   }
