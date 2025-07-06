@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:schedule_share_app/presentation/friends/user_search_screen.dart'; // NEW!
 
 class FriendsHubScreen extends StatelessWidget {
   const FriendsHubScreen({super.key});
@@ -6,7 +7,7 @@ class FriendsHubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2, // タブの数
+      length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('友達'),
@@ -15,7 +16,10 @@ class FriendsHubScreen extends StatelessWidget {
               icon: const Icon(Icons.person_add),
               tooltip: 'ユーザーを探す',
               onPressed: () {
-                // TODO: ユーザー検索画面に遷移する処理を後で追加
+                // --- MODIFIED! ユーザー検索画面に遷移 ---
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => const UserSearchScreen()),
+                );
               },
             ),
           ],
@@ -28,10 +32,7 @@ class FriendsHubScreen extends StatelessWidget {
         ),
         body: TabBarView(
           children: [
-            // TODO: 友達リストをここに表示する
             Center(child: Text('ここに友達リストが表示されます。')),
-            
-            // TODO: 届いた申請をここに表示する
             Center(child: Text('ここに届いた友達申請が表示されます。')),
           ],
         ),
