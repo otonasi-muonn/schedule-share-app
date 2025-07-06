@@ -215,12 +215,79 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 60, height: _hourHeight, child: Center(child: Text('${hour.toString().padLeft(2, '0')}:00', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)))),
+          SizedBox(
+            width: 60, 
+            height: _hourHeight, 
+            child: Center(
+              child: Text(
+                '${hour.toString().padLeft(2, '0')}:00', 
+                style: TextStyle(
+                  fontSize: 12, 
+                  color: Colors.grey.shade600,
+                  fontWeight: hour == 0 ? FontWeight.bold : FontWeight.normal,
+                )
+              )
+            )
+          ),
           Expanded(
             child: Stack(
               children: [
-                Container(decoration: BoxDecoration(border: Border(top: BorderSide(color: hour == 0 ? Colors.grey.shade400 : Colors.grey.shade200, width: hour == 0 ? 1.5 : 0.5), left: BorderSide(color: Colors.grey.shade300)))),
+                // 基本的な境界線（通常の時間線）
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border(
+                      top: BorderSide(
+                        color: Colors.grey.shade200, 
+                        width: 0.5
+                      ), 
+                      left: BorderSide(color: Colors.grey.shade300)
+                    )
+                  )
+                ),
+                
+                // 予定ブロック
                 ..._buildEventBlocks(eventsInSlot, slotStart, slotEnd),
+                
+                // 日付境界線（予定ブロックの上に表示）
+                if (hour == 0)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: Container(
+                        height: 1.5,
+                        color: Colors.grey.shade400,
+                      ),
+                    ),
+                  ),
+                
+                // 日付ラベル（日付境界線の上に表示）
+                if (hour == 0)
+                  Positioned(
+                    top: 2,
+                    left: 4,
+                    child: IgnorePointer(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.grey.shade300, width: 0.5),
+                        ),
+                        child: Text(
+                          DateFormat('M/d (E)', 'ja').format(day),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                
+                // 現在時刻インジケーター（最前面に表示）
                 ..._buildCurrentTimeIndicator(slotStart, slotEnd),
               ],
             ),
