@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:schedule_share_app/presentation/friends/friends_hub_screen.dart'; // NEW!
 import 'package:schedule_share_app/presentation/timeline_view/timeline_view_screen.dart';
 import 'package:schedule_share_app/presentation/widgets/schedule_dialog.dart';
 
@@ -23,40 +24,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _selectedDay = _focusedDay;
   }
 
-  Future<void> _deleteSchedule(String docId) async {
-    try {
-      await FirebaseFirestore.instance.collection('schedules').doc(docId).delete();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('予定を削除しました。')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('削除中にエラーが発生しました: $e')));
-      }
-    }
-  }
-
-  Future<void> _showDeleteConfirmDialog(String docId, String title) async {
-    return showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('削除の確認'),
-            content: Text('「$title」を本当に削除しますか？\nこの操作は元に戻せません。'),
-            actions: [
-              TextButton(child: const Text('キャンセル'), onPressed: () => Navigator.of(context).pop()),
-              TextButton(child: const Text('削除', style: TextStyle(color: Colors.red)), onPressed: () {
-                _deleteSchedule(docId);
-                Navigator.of(context).pop();
-              }),
-            ],
-          );
-        });
-  }
-
-  Future<void> _logout() async {
-    await FirebaseAuth.instance.signOut();
-  }
+  Future<void> _deleteSchedule(String docId) async { /* ... */ }
+  Future<void> _showDeleteConfirmDialog(String docId, String title) async { /* ... */ }
+  Future<void> _logout() async { /* ... */ }
 
   @override
   Widget build(BuildContext context) {
@@ -71,21 +41,35 @@ class _HomeScreenState extends State<HomeScreen> {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('schedules').where('userId', isEqualTo: user?.uid).snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('エラーが発生しました: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return buildCalendarAndList([]);
-          }
+          if (snapshot.connectionState == ConnectionState.waiting) { return const Center(child: CircularProgressIndicator()); }
+          if (snapshot.hasError) { return Center(child: Text('エラーが発生しました: ${snapshot.error}')); }
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) { return buildCalendarAndList([]); }
           return buildCalendarAndList(snapshot.data!.docs);
         },
       ),
-      floatingActionButton: FloatingActionButton(onPressed: () {
-        showScheduleDialog(context, initialDate: _selectedDay);
-      }, tooltip: '予定を追加', child: const Icon(Icons.add)),
+      // --- MODIFIED! 友達画面へのボタンを追加 ---
+      floatingActionButton: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (context) => const FriendsHubScreen()));
+            },
+            tooltip: '友達',
+            heroTag: 'friends_button', // 複数のFABを区別するため
+            child: const Icon(Icons.people),
+          ),
+          const SizedBox(width: 16),
+          FloatingActionButton(
+            onPressed: () {
+              showScheduleDialog(context, initialDate: _selectedDay);
+            },
+            tooltip: '予定を追加',
+            heroTag: 'add_schedule_button',
+            child: const Icon(Icons.add),
+          ),
+        ],
+      ),
     );
   }
 
