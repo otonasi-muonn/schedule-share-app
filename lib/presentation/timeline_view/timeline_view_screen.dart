@@ -113,8 +113,8 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
         stream: FirebaseFirestore.instance
             .collection('schedules')
             .where('userId', isEqualTo: user?.uid)
-            .where('startTime', isGreaterThanOrEqualTo: _startDate)
-            .where('startTime', isLessThan: _startDate.add(Duration(days: _totalDays)))
+            .where('startTime', isGreaterThanOrEqualTo: Timestamp.fromDate(_startDate))
+            .where('startTime', isLessThan: Timestamp.fromDate(_startDate.add(Duration(days: _totalDays))))
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
