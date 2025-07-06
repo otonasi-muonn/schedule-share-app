@@ -10,6 +10,8 @@ class RenderableEvent {
   final DocumentSnapshot doc;
   final DateTime displayStart;
   final DateTime displayEnd;
+  final DateTime originalStart;
+  final DateTime originalEnd;
   int column;
   int totalColumns;
 
@@ -17,6 +19,8 @@ class RenderableEvent {
     required this.doc,
     required this.displayStart,
     required this.displayEnd,
+    required this.originalStart,
+    required this.originalEnd,
     this.column = 0,
     this.totalColumns = 1,
   });
@@ -41,6 +45,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   late final DateTime _startDate;
   late final int _initialDayIndex;
   Timer? _currentTimeTimer;
+  static double? _lastScrollPosition; // スクロール位置を保持
 
   @override
   void initState() {
@@ -48,11 +53,15 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     _initialDayIndex = _totalDays ~/ 2;
     _startDate = DateUtils.dateOnly(widget.initialDate).subtract(Duration(days: _initialDayIndex));
 
-    // 初期位置へのスクロール
+    // 初期位置へのスクロール（以前のスクロール位置があれば復元）
     Timer(const Duration(milliseconds: 100), () {
       if (mounted && _scrollController.hasClients) {
-        final initialOffset = (_initialDayIndex * _hourHeight * 24) + (_hourHeight * 7); // 朝7時あたりにスクロール
-        _scrollController.jumpTo(initialOffset);
+        if (_lastScrollPosition != null) {
+          _scrollController.jumpTo(_lastScrollPosition!);
+        } else {
+          final initialOffset = (_initialDayIndex * _hourHeight * 24) + (_hourHeight * 7); // 朝7時あたりにスクロール
+          _scrollController.jumpTo(initialOffset);
+        }
       }
     });
 
@@ -66,6 +75,10 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
 
   @override
   void dispose() {
+    // スクロール位置を保存
+    if (_scrollController.hasClients) {
+      _lastScrollPosition = _scrollController.offset;
+    }
     _scrollController.dispose();
     _currentTimeTimer?.cancel();
     super.dispose();
@@ -121,17 +134,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
           
           final allRenderableEvents = _calculateLayout(allDocs);
           
-          return CustomScrollView(
-            controller: _scrollController,
-            slivers: [
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _buildTimeSlot(index, allRenderableEvents),
-                  childCount: _totalDays * 24,
-                ),
-              ),
-            ],
-          );
+          return _buildTimelineView(allRenderableEvents);
         },
       ),
       floatingActionButton: FloatingActionButton(
@@ -149,87 +152,137 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     );
   }
 
-  Widget _buildTimeSlot(int index, List<RenderableEvent> allRenderableEvents) {
-    final dayIndex = index ~/ 24;
-    final hour = index % 24;
-    final day = _startDate.add(Duration(days: dayIndex));
-    final slotStart = DateTime(day.year, day.month, day.day, hour);
-    final slotEnd = slotStart.add(const Duration(hours: 1));
-    
-    // この時間スロットに表示すべきイベントを取得
-    final eventsInSlot = allRenderableEvents.where((event) {
-      return event.displayStart.isBefore(slotEnd) && event.displayEnd.isAfter(slotStart);
-    }).toList();
-
-    return Container(
-      height: _hourHeight,
-      child: Row(
-        children: [
-          // 時間ラベル
-          SizedBox(
-            width: 60,
-            child: Center(
-              child: Text(
-                '${hour.toString().padLeft(2, '0')}:00',
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
-          ),
-          // メインエリア
-          Expanded(
-            child: Stack(
-              children: [
-                // 背景
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(color: Colors.grey.shade200),
-                      left: BorderSide(color: Colors.grey.shade300),
-                    ),
-                  ),
-                  child: hour == 0
-                      ? Align(
-                          alignment: Alignment.topLeft,
-                          child: Padding(
-                            padding: const EdgeInsets.all(4.0),
-                            child: Text(
-                              '${day.month}/${day.day} (${DateFormat.E('ja').format(day)})',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: DateUtils.isSameDay(day, widget.initialDate)
-                                    ? Colors.deepPurple
-                                    : null,
-                              ),
-                            ),
-                          ),
-                        )
-                      : null,
-                ),
-                // 現在時刻のインジケーター
-                ..._buildCurrentTimeIndicator(slotStart, slotEnd),
-                // イベントブロック
-                ...eventsInSlot.map((event) => _buildEventBlock(event, slotStart, slotEnd)),
-              ],
-            ),
-          ),
-        ],
+  Widget _buildTimelineView(List<RenderableEvent> allRenderableEvents) {
+    return SingleChildScrollView(
+      controller: _scrollController,
+      child: Container(
+        height: _totalDays * 24 * _hourHeight,
+        child: Stack(
+          children: [
+            // 背景の時間グリッド
+            ..._buildTimeGrid(),
+            // 現在時刻のインジケーター
+            ..._buildCurrentTimeIndicator(),
+            // 予定ブロック（連続表示）
+            ...allRenderableEvents.map((event) => _buildContinuousEventBlock(event)),
+          ],
+        ),
       ),
     );
   }
 
-  List<Widget> _buildCurrentTimeIndicator(DateTime slotStart, DateTime slotEnd) {
+  List<Widget> _buildTimeGrid() {
+    List<Widget> gridWidgets = [];
+    
+    for (int dayIndex = 0; dayIndex < _totalDays; dayIndex++) {
+      final day = _startDate.add(Duration(days: dayIndex));
+      final dayTop = dayIndex * 24 * _hourHeight;
+      
+      // 日付ヘッダー
+      gridWidgets.add(
+        Positioned(
+          top: dayTop,
+          left: 0,
+          right: 0,
+          height: _hourHeight,
+          child: Container(
+            decoration: BoxDecoration(
+              color: DateUtils.isSameDay(day, widget.initialDate) 
+                  ? Colors.deepPurple.withOpacity(0.1)
+                  : Colors.grey.withOpacity(0.05),
+              border: Border(
+                top: BorderSide(color: Colors.grey.shade400, width: 1),
+                bottom: BorderSide(color: Colors.grey.shade300),
+              ),
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 60,
+                  child: Center(
+                    child: Text(
+                      '00:00',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Text(
+                      '${day.month}/${day.day} (${DateFormat.E('ja').format(day)})',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: DateUtils.isSameDay(day, widget.initialDate)
+                            ? Colors.deepPurple
+                            : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      
+      // 時間ラベルとグリッド線
+      for (int hour = 1; hour < 24; hour++) {
+        final hourTop = dayTop + (hour * _hourHeight);
+        
+        gridWidgets.add(
+          Positioned(
+            top: hourTop,
+            left: 0,
+            right: 0,
+            height: _hourHeight,
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: Colors.grey.shade200),
+                  left: BorderSide(color: Colors.grey.shade300),
+                ),
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 60,
+                    child: Center(
+                      child: Text(
+                        '${hour.toString().padLeft(2, '0')}:00',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
+                  const Expanded(child: SizedBox()),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+    
+    return gridWidgets;
+  }
+
+  List<Widget> _buildCurrentTimeIndicator() {
     final now = DateTime.now();
-    if (now.isBefore(slotStart) || now.isAfter(slotEnd)) {
+    final dayIndex = DateUtils.dateOnly(now).difference(_startDate).inDays;
+    
+    if (dayIndex < 0 || dayIndex >= _totalDays) {
       return [];
     }
-
-    final minutesFromSlotStart = now.difference(slotStart).inMinutes;
-    final topOffset = (minutesFromSlotStart / 60.0) * _hourHeight;
-
+    
+    final dayTop = dayIndex * 24 * _hourHeight;
+    final minutesFromDayStart = (now.hour * 60) + now.minute;
+    final topOffset = dayTop + (minutesFromDayStart / 60.0) * _hourHeight;
+    
     return [
       Positioned(
         top: topOffset,
-        left: -8,
+        left: 52,
         right: 0,
         child: Row(
           children: [
@@ -246,19 +299,33 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     ];
   }
 
-  Widget _buildEventBlock(RenderableEvent event, DateTime slotStart, DateTime slotEnd) {
+  Widget _buildContinuousEventBlock(RenderableEvent event) {
     final data = event.doc.data() as Map<String, dynamic>;
-    final eventStart = event.displayStart.isAfter(slotStart) ? event.displayStart : slotStart;
-    final eventEnd = event.displayEnd.isBefore(slotEnd) ? event.displayEnd : slotEnd;
     
-    final topOffset = eventStart.difference(slotStart).inMinutes / 60.0 * _hourHeight;
-    final height = eventEnd.difference(eventStart).inMinutes / 60.0 * _hourHeight;
+    final startDayIndex = DateUtils.dateOnly(event.displayStart).difference(_startDate).inDays;
+    final endDayIndex = DateUtils.dateOnly(event.displayEnd).difference(_startDate).inDays;
+    
+    if (startDayIndex < 0 || startDayIndex >= _totalDays) {
+      return const SizedBox.shrink();
+    }
+    
+    // 開始位置の計算
+    final startDayTop = startDayIndex * 24 * _hourHeight;
+    final startMinutesFromDayStart = (event.displayStart.hour * 60) + event.displayStart.minute;
+    final topOffset = startDayTop + (startMinutesFromDayStart / 60.0) * _hourHeight;
+    
+    // 終了位置の計算
+    final endDayTop = endDayIndex * 24 * _hourHeight;
+    final endMinutesFromDayStart = (event.displayEnd.hour * 60) + event.displayEnd.minute;
+    final bottomOffset = endDayTop + (endMinutesFromDayStart / 60.0) * _hourHeight;
+    
+    final height = bottomOffset - topOffset;
     
     if (height <= 0) return const SizedBox.shrink();
 
     final availableWidth = MediaQuery.of(context).size.width - 60;
     final columnWidth = availableWidth / event.totalColumns;
-    final leftOffset = event.column * columnWidth;
+    final leftOffset = 60 + (event.column * columnWidth);
 
     return Positioned(
       top: topOffset,
@@ -275,6 +342,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
           decoration: BoxDecoration(
             color: Colors.blue.withAlpha(200),
             borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.blue.shade300),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -287,10 +355,13 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
                   fontWeight: FontWeight.bold,
                 ),
                 overflow: TextOverflow.ellipsis,
+                maxLines: 2,
               ),
-              if (height > 30) // 高さが十分にある場合のみ時間を表示
+              if (height > 40) // 高さが十分にある場合のみ時間を表示
                 Text(
-                  '${DateFormat.Hm().format(event.displayStart)} - ${DateFormat.Hm().format(event.displayEnd)}',
+                  data['isAllDay'] == true 
+                      ? '終日'
+                      : '${DateFormat.Hm().format(event.originalStart)} - ${DateFormat.Hm().format(event.originalEnd)}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 10,
@@ -313,48 +384,47 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       final end = (data['endTime'] as Timestamp).toDate();
       final isAllDay = data['isAllDay'] as bool? ?? false;
 
-      // 終日イベントの場合
+      DateTime displayStart, displayEnd;
+
       if (isAllDay) {
-        final dayStart = DateTime(start.year, start.month, start.day);
-        final dayEnd = DateTime(start.year, start.month, start.day, 23, 59, 59);
-        renderableEvents.add(RenderableEvent(
-          doc: doc,
-          displayStart: dayStart,
-          displayEnd: dayEnd,
-        ));
-        continue;
+        displayStart = DateTime(start.year, start.month, start.day);
+        displayEnd = DateTime(start.year, start.month, start.day, 23, 59, 59);
+      } else {
+        displayStart = start;
+        displayEnd = end;
+        
+        // 開始時刻と終了時刻が同じ場合、最低30分の高さで表示
+        if (start.isAtSameMomentAs(end)) {
+          displayEnd = start.add(const Duration(minutes: 30));
+        }
       }
 
-      // 開始時刻と終了時刻が同じ場合、最低30分の高さで表示
-      if (start.isAtSameMomentAs(end)) {
-        renderableEvents.add(RenderableEvent(
-          doc: doc,
-          displayStart: start,
-          displayEnd: start.add(const Duration(minutes: 30)),
-        ));
-        continue;
-      }
-
-      // 日をまたぐイベントを日ごとに分割
-      var current = start;
-      while (current.isBefore(end)) {
-        final endOfCurrentDay = DateTime(current.year, current.month, current.day, 23, 59, 59);
-        final blockEnd = end.isBefore(endOfCurrentDay) ? end : endOfCurrentDay;
-        
-        renderableEvents.add(RenderableEvent(
-          doc: doc,
-          displayStart: current,
-          displayEnd: blockEnd,
-        ));
-        
-        current = DateTime(current.year, current.month, current.day).add(const Duration(days: 1));
-      }
+      renderableEvents.add(RenderableEvent(
+        doc: doc,
+        displayStart: displayStart,
+        displayEnd: displayEnd,
+        originalStart: start,
+        originalEnd: end,
+      ));
     }
 
     // 日ごとにグループ化してレイアウトを計算
-    final groupedByDay = groupBy(renderableEvents, (e) => DateUtils.dateOnly(e.displayStart));
+    final groupedByDay = <DateTime, List<RenderableEvent>>{};
+    
+    for (final event in renderableEvents) {
+      final startDay = DateUtils.dateOnly(event.displayStart);
+      final endDay = DateUtils.dateOnly(event.displayEnd);
+      
+      // 日をまたぐ場合は複数の日に追加
+      DateTime currentDay = startDay;
+      while (currentDay.isBefore(endDay.add(const Duration(days: 1)))) {
+        groupedByDay.putIfAbsent(currentDay, () => []).add(event);
+        currentDay = currentDay.add(const Duration(days: 1));
+      }
+    }
     
     groupedByDay.forEach((day, eventsOnDay) {
+      // 同じ日に表示されるイベントをスタート時間でソート
       eventsOnDay.sort((a, b) => a.displayStart.compareTo(b.displayStart));
       
       final List<List<RenderableEvent>> columns = [];
@@ -362,14 +432,17 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       for (final event in eventsOnDay) {
         bool placed = false;
         
+        // 既存のカラムに配置できるかチェック
         for (final col in columns) {
-          if (!col.last.displayEnd.isAfter(event.displayStart)) {
+          final lastEventInColumn = col.last;
+          if (!lastEventInColumn.displayEnd.isAfter(event.displayStart)) {
             col.add(event);
             placed = true;
             break;
           }
         }
         
+        // 新しいカラムを作成
         if (!placed) {
           columns.add([event]);
         }
