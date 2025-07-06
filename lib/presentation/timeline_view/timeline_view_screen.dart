@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:collection/collection.dart';
 import 'package:schedule_share_app/presentation/widgets/schedule_dialog.dart';
 
+// 描画イベントのヘルパークラス
 class RenderableEvent {
   final DocumentSnapshot doc;
   final DateTime displayStart;
@@ -37,19 +38,19 @@ class TimelineViewScreen extends StatefulWidget {
 class _TimelineViewScreenState extends State<TimelineViewScreen> {
   final ScrollController _scrollController = ScrollController();
   final double _hourHeight = 80.0;
-  final int _totalDays = 61;
+  final int _totalDays = 61; // 約2ヶ月分
   late final DateTime _startDate;
   late final int _initialDayIndex;
-  DateTime _appBarDate = DateTime.now();
-  // --- MODIFIED! 1分ごとに更新するタイマーを削除 ---
-  // Timer? _currentTimeTimer; 
+
+  // --- NEW! アプリバーの日付専用の通知役 ---
+  late final ValueNotifier<DateTime> _appBarDateNotifier;
 
   @override
   void initState() {
     super.initState();
     _initialDayIndex = _totalDays ~/ 2;
     _startDate = DateUtils.dateOnly(widget.initialDate).subtract(Duration(days: _initialDayIndex));
-    _appBarDate = widget.initialDate;
+    _appBarDateNotifier = ValueNotifier(widget.initialDate);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _scrollController.hasClients) {
@@ -60,13 +61,13 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
 
     _scrollController.addListener(() {
       if (!mounted || !_scrollController.hasClients) return;
-      final centerOffset = _scrollController.offset + (context.size?.height ?? 0) / 2;
+      // 画面上部から1/4の位置を基準に日付を判定
+      final centerOffset = _scrollController.offset + (context.size!.height / 4);
       final centerDayIndex = (centerOffset / (_hourHeight * 24)).floor();
       final newDate = _startDate.add(Duration(days: centerDayIndex));
-      if (!DateUtils.isSameDay(_appBarDate, newDate)) {
-        setState(() {
-          _appBarDate = newDate;
-        });
+      
+      if (!DateUtils.isSameDay(_appBarDateNotifier.value, newDate)) {
+        _appBarDateNotifier.value = newDate;
       }
     });
   }
@@ -74,7 +75,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
-    // _currentTimeTimer?.cancel(); // タイマーを削除したので、これも不要
+    _appBarDateNotifier.dispose();
     super.dispose();
   }
 
@@ -82,7 +83,15 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     return Scaffold(
-      appBar: AppBar(title: Text(DateFormat('yyyy年 M月d日 (E)', 'ja').format(_appBarDate))),
+      appBar: AppBar(
+        // --- MODIFIED! ValueListenableBuilderでタイトルだけを更新 ---
+        title: ValueListenableBuilder<DateTime>(
+          valueListenable: _appBarDateNotifier,
+          builder: (context, value, child) {
+            return Text(DateFormat('yyyy年 M月d日 (E)', 'ja').format(value));
+          },
+        ),
+      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('schedules').where('userId', isEqualTo: user?.uid).where('startTime', isGreaterThanOrEqualTo: _startDate).where('startTime', isLessThan: _startDate.add(Duration(days: _totalDays))).snapshots(),
         builder: (context, snapshot) {
@@ -120,13 +129,13 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   }
 
   Widget _buildTimeSlot(int index, List<RenderableEvent> allRenderableEvents) {
+    final dayIndex = index ~/ 24;
     final hour = index % 24;
+    final day = _startDate.add(Duration(days: dayIndex));
+    final slotStart = DateTime(day.year, day.month, day.day, hour);
+    final slotEnd = slotStart.add(const Duration(hours: 1));
     
     final eventsInSlot = allRenderableEvents.where((event) {
-      final dayIndex = index ~/ 24;
-      final day = _startDate.add(Duration(days: dayIndex));
-      final slotStart = DateTime(day.year, day.month, day.day, hour);
-      final slotEnd = slotStart.add(const Duration(hours: 1));
       return event.displayStart.isBefore(slotEnd) && event.displayEnd.isAfter(slotStart);
     }).toList();
 
@@ -145,11 +154,19 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
           ),
           Expanded(
             child: Stack(
+              clipBehavior: Clip.none,
               children: [
                 Container(decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade200), left: BorderSide(color: Colors.grey.shade300)))),
-                // --- MODIFIED! タイムライン内の日付表示を削除 ---
-                ..._buildEventBlocks(eventsInSlot, hour),
-                ..._buildCurrentTimeIndicator(hour),
+                ..._buildEventBlocks(eventsInSlot, slotStart),
+                if (hour == 0)
+                  Positioned(
+                    top: 4, left: 4,
+                    child: Text(
+                      '${day.month}/${day.day} (${DateFormat.E('ja').format(day)})',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: DateUtils.isSameDay(day, widget.initialDate) ? Colors.deepPurple : null, backgroundColor: Theme.of(context).scaffoldBackgroundColor.withAlpha(200)),
+                    ),
+                  ),
+                ..._buildCurrentTimeIndicator(slotStart),
               ],
             ),
           ),
@@ -158,22 +175,18 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     );
   }
 
-  List<Widget> _buildCurrentTimeIndicator(int hour) {
+  List<Widget> _buildCurrentTimeIndicator(DateTime slotStart) {
     final now = DateTime.now();
-    final slotStart = DateUtils.dateOnly(now).add(Duration(hours: hour));
     final slotEnd = slotStart.add(const Duration(hours: 1));
     if (now.isBefore(slotStart) || now.isAfter(slotEnd)) return [];
-
     final topOffset = (now.difference(slotStart).inMinutes / 60.0) * _hourHeight;
     return [Positioned(top: topOffset, left: -8, right: 0, child: IgnorePointer(child: Row(children: [Icon(Icons.circle, color: Colors.red[700], size: 12), Expanded(child: Container(height: 2, color: Colors.red[700]))])))];
   }
 
-  List<Widget> _buildEventBlocks(List<RenderableEvent> events, int hour) {
+  List<Widget> _buildEventBlocks(List<RenderableEvent> events, DateTime slotStart) {
     final availableWidth = MediaQuery.of(context).size.width - 60;
     return events.map((event) {
       final data = event.doc.data() as Map<String, dynamic>;
-      final slotStart = DateUtils.dateOnly(event.displayStart).add(Duration(hours: hour));
-      
       final eventStart = event.displayStart.isAfter(slotStart) ? event.displayStart : slotStart;
       final eventEnd = event.displayEnd.isBefore(slotStart.add(const Duration(hours: 1))) ? event.displayEnd : slotStart.add(const Duration(hours: 1));
       
@@ -214,9 +227,10 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
 
   List<RenderableEvent> _calculateLayout(List<QueryDocumentSnapshot> allDocs) {
     List<RenderableEvent> renderableEvents = [];
-    allDocs.sort((a, b) => (a['startTime'] as Timestamp).compareTo(b['startTime'] as Timestamp));
+    final sortedDocs = List<QueryDocumentSnapshot>.from(allDocs);
+    sortedDocs.sort((a, b) => (a['startTime'] as Timestamp).compareTo(b['startTime'] as Timestamp));
     
-    for (final doc in allDocs) {
+    for (final doc in sortedDocs) {
       final data = doc.data() as Map<String, dynamic>;
       if (data['isAllDay'] as bool? ?? false) continue;
       
