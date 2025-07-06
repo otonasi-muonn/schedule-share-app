@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:collection/collection.dart';
 import 'package:schedule_share_app/presentation/widgets/schedule_dialog.dart';
 
-// 描画イベントのヘルパークラス
 class RenderableEvent {
   final DocumentSnapshot doc;
   final DateTime displayStart;
@@ -38,11 +37,12 @@ class TimelineViewScreen extends StatefulWidget {
 class _TimelineViewScreenState extends State<TimelineViewScreen> {
   final ScrollController _scrollController = ScrollController();
   final double _hourHeight = 80.0;
-  final int _totalDays = 61; // 約2ヶ月分
+  final int _totalDays = 61;
   late final DateTime _startDate;
   late final int _initialDayIndex;
-  Timer? _currentTimeTimer;
   DateTime _appBarDate = DateTime.now();
+  // --- MODIFIED! 1分ごとに更新するタイマーを削除 ---
+  // Timer? _currentTimeTimer; 
 
   @override
   void initState() {
@@ -53,19 +53,13 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _scrollController.hasClients) {
-        final initialOffset = (_initialDayIndex * _hourHeight * 24) + (_hourHeight * 7); // 朝7時あたりにスクロール
+        final initialOffset = (_initialDayIndex * _hourHeight * 24) + (_hourHeight * 7);
         _scrollController.jumpTo(initialOffset);
       }
     });
 
-    _currentTimeTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
-      if (mounted) {
-        setState(() {});
-      }
-    });
-
     _scrollController.addListener(() {
-      if (!_scrollController.hasClients) return;
+      if (!mounted || !_scrollController.hasClients) return;
       final centerOffset = _scrollController.offset + (context.size?.height ?? 0) / 2;
       final centerDayIndex = (centerOffset / (_hourHeight * 24)).floor();
       final newDate = _startDate.add(Duration(days: centerDayIndex));
@@ -80,12 +74,8 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
-    _currentTimeTimer?.cancel();
+    // _currentTimeTimer?.cancel(); // タイマーを削除したので、これも不要
     super.dispose();
-  }
-
-  double _calculateTopOffset(DateTime time, DateTime dayStart) {
-    return time.difference(dayStart).inMinutes / 60.0 * _hourHeight;
   }
 
   @override
@@ -130,13 +120,13 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   }
 
   Widget _buildTimeSlot(int index, List<RenderableEvent> allRenderableEvents) {
-    final dayIndex = index ~/ 24;
     final hour = index % 24;
-    final day = _startDate.add(Duration(days: dayIndex));
-    final slotStart = DateTime(day.year, day.month, day.day, hour);
-    final slotEnd = slotStart.add(const Duration(hours: 1));
     
     final eventsInSlot = allRenderableEvents.where((event) {
+      final dayIndex = index ~/ 24;
+      final day = _startDate.add(Duration(days: dayIndex));
+      final slotStart = DateTime(day.year, day.month, day.day, hour);
+      final slotEnd = slotStart.add(const Duration(hours: 1));
       return event.displayStart.isBefore(slotEnd) && event.displayEnd.isAfter(slotStart);
     }).toList();
 
@@ -155,19 +145,11 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
           ),
           Expanded(
             child: Stack(
-              clipBehavior: Clip.none,
               children: [
                 Container(decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade200), left: BorderSide(color: Colors.grey.shade300)))),
-                ..._buildEventBlocks(eventsInSlot, slotStart),
-                if (hour == 0)
-                  Positioned(
-                    top: 4, left: 4,
-                    child: Text(
-                      '${day.month}/${day.day} (${DateFormat.E('ja').format(day)})',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: DateUtils.isSameDay(day, widget.initialDate) ? Colors.deepPurple : null, backgroundColor: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5)),
-                    ),
-                  ),
-                ..._buildCurrentTimeIndicator(slotStart),
+                // --- MODIFIED! タイムライン内の日付表示を削除 ---
+                ..._buildEventBlocks(eventsInSlot, hour),
+                ..._buildCurrentTimeIndicator(hour),
               ],
             ),
           ),
@@ -176,18 +158,22 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     );
   }
 
-  List<Widget> _buildCurrentTimeIndicator(DateTime slotStart) {
+  List<Widget> _buildCurrentTimeIndicator(int hour) {
     final now = DateTime.now();
+    final slotStart = DateUtils.dateOnly(now).add(Duration(hours: hour));
     final slotEnd = slotStart.add(const Duration(hours: 1));
     if (now.isBefore(slotStart) || now.isAfter(slotEnd)) return [];
+
     final topOffset = (now.difference(slotStart).inMinutes / 60.0) * _hourHeight;
     return [Positioned(top: topOffset, left: -8, right: 0, child: IgnorePointer(child: Row(children: [Icon(Icons.circle, color: Colors.red[700], size: 12), Expanded(child: Container(height: 2, color: Colors.red[700]))])))];
   }
 
-  List<Widget> _buildEventBlocks(List<RenderableEvent> events, DateTime slotStart) {
+  List<Widget> _buildEventBlocks(List<RenderableEvent> events, int hour) {
     final availableWidth = MediaQuery.of(context).size.width - 60;
     return events.map((event) {
       final data = event.doc.data() as Map<String, dynamic>;
+      final slotStart = DateUtils.dateOnly(event.displayStart).add(Duration(hours: hour));
+      
       final eventStart = event.displayStart.isAfter(slotStart) ? event.displayStart : slotStart;
       final eventEnd = event.displayEnd.isBefore(slotStart.add(const Duration(hours: 1))) ? event.displayEnd : slotStart.add(const Duration(hours: 1));
       
@@ -199,9 +185,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       final leftOffset = event.column * columnWidth;
 
       final originalStart = (data['startTime'] as Timestamp).toDate();
-      final originalEnd = (data['endTime'] as Timestamp).toDate();
-      final bool isFirstPart = DateUtils.isSameDay(event.displayStart, originalStart);
-      final bool isLastPart = DateUtils.isSameDay(event.displayEnd, originalEnd) || event.displayEnd.hour == 23 && event.displayEnd.minute == 59;
+      final bool isFirstPart = DateUtils.isSameDay(event.displayStart, originalStart) && event.displayStart.hour == originalStart.hour && event.displayStart.minute == originalStart.minute;
       
       return Positioned(
         top: topOffset, left: leftOffset, width: columnWidth, height: height,
@@ -213,7 +197,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
               color: Colors.blue.withAlpha(200),
               borderRadius: BorderRadius.vertical(
                 top: isFirstPart ? const Radius.circular(4) : Radius.zero,
-                bottom: isLastPart ? const Radius.circular(4) : Radius.zero,
+                bottom: (event.displayEnd.hour == 23 && event.displayEnd.minute == 59) || DateUtils.isSameDay(event.displayEnd, (data['endTime'] as Timestamp).toDate()) ? const Radius.circular(4) : Radius.zero,
               ),
             ),
             child: Column(
