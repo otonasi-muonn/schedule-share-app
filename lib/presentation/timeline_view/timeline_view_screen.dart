@@ -41,7 +41,10 @@ class TimelineViewScreen extends StatefulWidget {
 class _TimelineViewScreenState extends State<TimelineViewScreen> {
   final ScrollController _scrollController = ScrollController();
   final double _hourHeight = 80.0;
-  List<DateTime> _loadedDays = [];
+  final int _initialLoadDays = 15; // 初期読み込み日数（前後）
+  final int _loadMoreChunk = 7; // 追加読み込み日数
+
+  final List<DateTime> _loadedDays = [];
   bool _isLoadingTop = false;
   bool _isLoadingBottom = false;
   late final ValueNotifier<DateTime> _appBarDateNotifier;
@@ -51,9 +54,12 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   void initState() {
     super.initState();
     _appBarDateNotifier = ValueNotifier(widget.initialDate);
+
     _loadInitialDays();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToInitialPosition());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToInitialPosition();
+    });
 
     _scrollController.addListener(_scrollListener);
 
@@ -76,8 +82,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
   void _loadInitialDays() {
     _loadedDays.clear();
     final baseDate = DateUtils.dateOnly(widget.initialDate);
-    // 初期表示を約1ヶ月に
-    for (int i = -15; i <= 15; i++) {
+    for (int i = -_initialLoadDays; i <= _initialLoadDays; i++) {
       _loadedDays.add(baseDate.add(Duration(days: i)));
     }
   }
@@ -93,7 +98,9 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
 
   void _scrollListener() {
     if (!mounted || !_scrollController.hasClients) return;
+
     _updateAppBarDate();
+
     if (!_isLoadingBottom && _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 1000) {
       _loadMoreDays(isTop: false);
     }
@@ -115,9 +122,13 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
 
   Future<void> _loadMoreDays({required bool isTop}) async {
     if (isTop ? _isLoadingTop : _isLoadingBottom) return;
+
     setState(() {
-      if (isTop) _isLoadingTop = true;
-      else _isLoadingBottom = true;
+      if (isTop) {
+        _isLoadingTop = true;
+      } else {
+        _isLoadingBottom = true;
+      }
     });
 
     await Future.delayed(const Duration(milliseconds: 300));
@@ -126,30 +137,36 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     setState(() {
       if (isTop) {
         final firstDay = _loadedDays.first;
-        final newDays = [for (int i = 7; i >= 1; i--) firstDay.subtract(Duration(days: i))];
+        final newDays = [for (int i = _loadMoreChunk; i >= 1; i--) firstDay.subtract(Duration(days: i))];
         _loadedDays.insertAll(0, newDays);
+        _isLoadingTop = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scrollController.hasClients) {
-            _scrollController.jumpTo(_scrollController.offset + (7 * _hourHeight * 24));
+            _scrollController.jumpTo(_scrollController.offset + (_loadMoreChunk * _hourHeight * 24));
           }
         });
-        _isLoadingTop = false;
       } else {
         final lastDay = _loadedDays.last;
-        for (int i = 1; i <= 7; i++) {
+        for (int i = 1; i <= _loadMoreChunk; i++) {
           _loadedDays.add(lastDay.add(Duration(days: i)));
         }
         _isLoadingBottom = false;
       }
     });
   }
-  
+
   void _scrollToToday() {
     final today = DateUtils.dateOnly(DateTime.now());
     final todayIndex = _loadedDays.indexWhere((day) => DateUtils.isSameDay(day, today));
     if (todayIndex != -1) {
       final targetOffset = (todayIndex * _hourHeight * 24) + (_hourHeight * DateTime.now().hour);
       _scrollController.animateTo(targetOffset, duration: const Duration(milliseconds: 500), curve: Curves.easeOut);
+    } else {
+      // もし今日が読み込まれていなければ、初期化してジャンプ
+      setState(() {
+        _loadInitialDays();
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToInitialPosition());
+      });
     }
   }
 
@@ -175,7 +192,6 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
           }
           final allDocs = snapshot.data?.docs ?? [];
           final allRenderableEvents = _calculateLayout(allDocs);
-          
           return CustomScrollView(
             controller: _scrollController,
             slivers: [
@@ -203,91 +219,26 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     final dayIndex = index ~/ 24;
     final hour = index % 24;
     if (dayIndex >= _loadedDays.length) return const SizedBox.shrink();
-    
     final day = _loadedDays[dayIndex];
     final slotStart = DateTime(day.year, day.month, day.day, hour);
     final slotEnd = slotStart.add(const Duration(hours: 1));
-    
     final eventsInSlot = allRenderableEvents.where((event) => event.displayStart.isBefore(slotEnd) && event.displayEnd.isAfter(slotStart)).toList();
-
     return SizedBox(
       height: _hourHeight,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 60, 
-            height: _hourHeight, 
+            width: 60,
             child: Center(
-              child: Text(
-                '${hour.toString().padLeft(2, '0')}:00', 
-                style: TextStyle(
-                  fontSize: 12, 
-                  color: Colors.grey.shade600,
-                  fontWeight: hour == 0 ? FontWeight.bold : FontWeight.normal,
-                )
-              )
-            )
+              child: Text('${hour.toString().padLeft(2, '0')}:00', style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: hour == 0 ? FontWeight.bold : FontWeight.normal)),
+            ),
           ),
           Expanded(
             child: Stack(
               children: [
-                // 基本的な境界線（通常の時間線）
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(
-                        color: Colors.grey.shade200, 
-                        width: 0.5
-                      ), 
-                      left: BorderSide(color: Colors.grey.shade300)
-                    )
-                  )
-                ),
-                
-                // 予定ブロック
-                ..._buildEventBlocks(eventsInSlot, slotStart, slotEnd),
-                
-                // 日付境界線（予定ブロックの上に表示）
-                if (hour == 0)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: IgnorePointer(
-                      child: Container(
-                        height: 1.5,
-                        color: Colors.grey.shade400,
-                      ),
-                    ),
-                  ),
-                
-                // 日付ラベル（日付境界線の上に表示）
-                if (hour == 0)
-                  Positioned(
-                    top: 2,
-                    left: 4,
-                    child: IgnorePointer(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.grey.shade300, width: 0.5),
-                        ),
-                        child: Text(
-                          DateFormat('M/d (E)', 'ja').format(day),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey.shade700,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                
-                // 現在時刻インジケーター（最前面に表示）
+                Container(decoration: BoxDecoration(border: Border(top: BorderSide(color: hour == 0 ? Colors.grey.shade400 : Colors.grey.shade200, width: hour == 0 ? 1.5 : 0.5), left: BorderSide(color: Colors.grey.shade300)))),
+                ..._buildEventBlocks(eventsInSlot, slotStart),
                 ..._buildCurrentTimeIndicator(slotStart, slotEnd),
               ],
             ),
@@ -296,33 +247,40 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       ),
     );
   }
-  
+
   List<Widget> _buildCurrentTimeIndicator(DateTime slotStart, DateTime slotEnd) {
     final now = DateTime.now();
     if (now.isBefore(slotStart) || now.isAfter(slotEnd)) return [];
     final topOffset = (now.difference(slotStart).inMinutes / 60.0) * _hourHeight;
-    return [Positioned(top: topOffset - 1, left: -8, right: 0, child: IgnorePointer(child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(color: Colors.red[700], shape: BoxShape.circle)), Expanded(child: Container(height: 2, color: Colors.red[700]))])))];
+    return [
+      Positioned(
+        top: topOffset - 1, left: -8, right: 0,
+        child: IgnorePointer(
+          child: Row(
+            children: [
+              Container(width: 8, height: 8, decoration: BoxDecoration(color: Colors.red[700], shape: BoxShape.circle)),
+              Expanded(child: Container(height: 2, color: Colors.red[700])),
+            ],
+          ),
+        ),
+      )
+    ];
   }
 
-  List<Widget> _buildEventBlocks(List<RenderableEvent> events, DateTime slotStart, DateTime slotEnd) {
+  List<Widget> _buildEventBlocks(List<RenderableEvent> events, DateTime slotStart) {
     final availableWidth = MediaQuery.of(context).size.width - 60;
     return events.map((event) {
       final data = event.doc.data() as Map<String, dynamic>;
       final blockStart = event.displayStart.isAfter(slotStart) ? event.displayStart : slotStart;
-      final blockEnd = event.displayEnd.isBefore(slotEnd) ? event.displayEnd : slotEnd;
+      final blockEnd = event.displayEnd.isBefore(slotStart.add(const Duration(hours: 1))) ? event.displayEnd : slotStart.add(const Duration(hours: 1));
       final topOffset = (blockStart.difference(slotStart).inMinutes / 60.0) * _hourHeight;
       final height = (blockEnd.difference(blockStart).inMinutes / 60.0) * _hourHeight;
       if (height <= 0) return const SizedBox.shrink();
-
       final columnWidth = availableWidth / event.totalColumns;
       final leftOffset = event.column * columnWidth;
-
       final isTopRounded = event.isFirstPart && event.displayStart.isAtSameMomentAs(blockStart);
       final isBottomRounded = event.isLastPart && event.displayEnd.isAtSameMomentAs(blockEnd);
-      
-      // 修正: タイトルを表示するかどうかの判定を改善
-      // 元の予定の最初の部分かつ、現在の表示ブロックが実際に予定の開始時刻を含んでいる場合のみ表示
-      final shouldShowTitle = event.isFirstPart && event.displayStart.isAtSameMomentAs(blockStart);
+      final shouldShowTitle = event.isFirstPart;
 
       return Positioned(
         top: topOffset, left: leftOffset, width: columnWidth, height: height,
@@ -343,7 +301,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(data['title'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis, maxLines: 1),
-                        if (height > 30) Text('${DateFormat.Hm().format(event.originalStart)} - ${DateFormat.Hm().format(event.originalEnd)}', style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 10), overflow: TextOverflow.ellipsis, maxLines: 1),
+                        if (height > 30) Text('${DateFormat.Hm().format(event.originalStart)} - ${DateFormat.Hm().format(event.originalEnd)}', style: TextStyle(color: Colors.white.withAlpha(220), fontSize: 10), overflow: TextOverflow.ellipsis, maxLines: 1),
                       ],
                     )
                   : null,
@@ -353,7 +311,7 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
       );
     }).toList();
   }
-  
+
   List<RenderableEvent> _calculateLayout(List<QueryDocumentSnapshot> allDocs) {
     List<RenderableEvent> renderableEvents = [];
     final timeEvents = allDocs.map((doc) {
@@ -366,12 +324,11 @@ class _TimelineViewScreenState extends State<TimelineViewScreen> {
     }).whereType<Map<String, dynamic>>().toList();
     
     timeEvents.sort((a, b) => (a['start'] as DateTime).compareTo(b['start'] as DateTime));
-
+    
     for (final event in timeEvents) {
       final start = event['start'] as DateTime;
       final end = event['end'] as DateTime;
       final effectiveEnd = start.isAtSameMomentAs(end) ? start.add(const Duration(minutes: 30)) : end;
-      
       var current = start;
       while (current.isBefore(effectiveEnd)) {
         final endOfCurrentDay = DateUtils.dateOnly(current).add(const Duration(days: 1));

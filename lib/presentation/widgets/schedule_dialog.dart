@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 
 Future<void> showScheduleDialog(BuildContext context, {DocumentSnapshot? scheduleDoc, DateTime? initialDate}) async {
   final isEditing = scheduleDoc != null;
-  final initialData = isEditing ? scheduleDoc!.data() as Map<String, dynamic> : null;
+  final initialData = isEditing ? scheduleDoc.data() as Map<String, dynamic> : null;
 
   final titleController = TextEditingController(text: initialData?['title'] as String? ?? '');
   final initialStartTimeStamp = initialData?['startTime'] as Timestamp?;
@@ -34,11 +34,15 @@ Future<void> showScheduleDialog(BuildContext context, {DocumentSnapshot? schedul
                   TextField(
                     controller: titleController,
                     decoration: InputDecoration(hintText: "タイトルを入力", errorText: titleErrorText),
-                    onChanged: (value) { if (titleErrorText != null && value.isNotEmpty) { setState(() { titleErrorText = null; }); } },
+                    onChanged: (value) {
+                      if (titleErrorText != null && value.isNotEmpty) {
+                        setState(() { titleErrorText = null; });
+                      }
+                    },
                   ),
                   const SizedBox(height: 20),
-                  Row(children: [ const Text('終日:'), Checkbox(value: isAllDay, onChanged: (value) { setState(() { isAllDay = value ?? false; }); }) ]),
-                  Row(children: [ const Text('日付: '), TextButton(child: Text(DateFormat('yyyy年M月d日').format(selectedDate), style: const TextStyle(fontSize: 16)), onPressed: () async { final newDate = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2020), lastDate: DateTime(2030)); if (newDate != null) { setState(() { selectedDate = newDate; }); } }) ]),
+                  Row(children: [ const Text('終日:'), Checkbox(value: isAllDay, onChanged: (value) { setState(() { isAllDay = value ?? false; }); }), ]),
+                  Row(children: [ const Text('日付: '), TextButton(child: Text(DateFormat('yyyy年M月d日').format(selectedDate), style: const TextStyle(fontSize: 16)), onPressed: () async { final newDate = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2020), lastDate: DateTime(2030)); if (newDate != null) { setState(() { selectedDate = newDate; }); } },), ]),
                   if (!isAllDay)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -64,7 +68,7 @@ Future<void> showScheduleDialog(BuildContext context, {DocumentSnapshot? schedul
                   
                   try {
                     if (isEditing) {
-                      await _updateSchedule(docId: scheduleDoc!.id, title: title, date: selectedDate, isAllDay: isAllDay, startTime: startTime, endTime: endTime);
+                      await _updateSchedule(docId: scheduleDoc.id, title: title, date: selectedDate, isAllDay: isAllDay, startTime: startTime, endTime: endTime);
                       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('予定を更新しました。')));
                     } else {
                       await _addSchedule(title: title, date: selectedDate, isAllDay: isAllDay, startTime: startTime, endTime: endTime);
