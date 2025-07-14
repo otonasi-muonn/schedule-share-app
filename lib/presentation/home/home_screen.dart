@@ -48,8 +48,9 @@ class _HomeScreenState extends State<HomeScreen> {
               TextButton(child: const Text('キャンセル'), onPressed: () => Navigator.of(dialogContext).pop()),
               TextButton(child: const Text('削除', style: TextStyle(color: Colors.red)), onPressed: () {
                 _deleteSchedule(docId);
-                if (mounted) {
-                  Navigator.of(dialogContext).pop();
+                // `mounted` check after async gap
+                if (Navigator.of(dialogContext).canPop()) {
+                   Navigator.of(dialogContext).pop();
                 }
               }),
             ],
@@ -74,13 +75,18 @@ class _HomeScreenState extends State<HomeScreen> {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('schedules').where('userId', isEqualTo: user?.uid).snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) { return const Center(child: CircularProgressIndicator()); }
-          if (snapshot.hasError) { return Center(child: Text('エラーが発生しました: ${snapshot.error}')); }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) { return buildCalendarAndList([]); }
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('エラーが発生しました: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return buildCalendarAndList([]);
+          }
           return buildCalendarAndList(snapshot.data!.docs);
         },
       ),
-      // --- MODIFIED! 友達画面へのボタンを正しく再設置 ---
       floatingActionButton: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
@@ -89,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.of(context).push(MaterialPageRoute(builder: (context) => const FriendsHubScreen()));
             },
             tooltip: '友達',
-            heroTag: 'friends_button', // 複数のFABを区別するためのタグ
+            heroTag: 'friends_button',
             child: const Icon(Icons.people),
           ),
           const SizedBox(width: 16),
@@ -98,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
               showScheduleDialog(context, initialDate: _selectedDay);
             },
             tooltip: '予定を追加',
-            heroTag: 'add_schedule_button', // 複数のFABを区別するためのタグ
+            heroTag: 'add_schedule_button',
             child: const Icon(Icons.add),
           ),
         ],
@@ -120,7 +126,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final filteredDocs = allDocs.where((doc) {
-      if (_selectedDay == null) { return true; }
+      if (_selectedDay == null) {
+        return true;
+      }
       final data = doc.data();
       if (data is Map<String, dynamic> && data.containsKey('startTime')) {
         final startTime = data['startTime'] as Timestamp?;
@@ -149,16 +157,22 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
         onDaySelected: (selectedDay, focusedDay) {
           setState(() {
-            if (isSameDay(_selectedDay, selectedDay)) { _selectedDay = null; } 
-            else { _selectedDay = selectedDay; _focusedDay = focusedDay; }
+            if (isSameDay(_selectedDay, selectedDay)) {
+              _selectedDay = null;
+            } else {
+              _selectedDay = selectedDay;
+              _focusedDay = focusedDay;
+            }
           });
         },
         calendarStyle: const CalendarStyle(todayDecoration: BoxDecoration(color: Colors.orange, shape: BoxShape.circle), selectedDecoration: BoxDecoration(color: Colors.deepPurple, shape: BoxShape.circle)),
-        eventLoader: (day) { return events[DateTime.utc(day.year, day.month, day.day)] ?? []; },
+        eventLoader: (day) {
+          return events[DateTime.utc(day.year, day.month, day.day)] ?? [];
+        },
       ),
       const SizedBox(height: 8.0),
       Expanded(
-        child: filteredDocs.isEmpty 
+        child: filteredDocs.isEmpty
             ? Center(child: Text(_selectedDay != null ? 'この日の予定はありません。' : 'すべての予定'))
             : ListView.builder(
                 itemCount: filteredDocs.length,
@@ -170,18 +184,28 @@ class _HomeScreenState extends State<HomeScreen> {
                   final startTime = data['startTime'] as Timestamp?;
                   final endTime = data['endTime'] as Timestamp?;
                   String timeText;
-                  if (isAllDay) { timeText = '終日'; } 
-                  else if (startTime != null && endTime != null) {
-                    if (!isSameDay(startTime.toDate(), endTime.toDate())) { timeText = '${DateFormat.Hm().format(startTime.toDate())} - ${DateFormat('M/d H:mm').format(endTime.toDate())}'; } 
-                    else { timeText = '${DateFormat.Hm().format(startTime.toDate())} - ${DateFormat.Hm().format(endTime.toDate())}'; }
-                  } else { timeText = '時刻未設定'; }
+                  if (isAllDay) {
+                    timeText = '終日';
+                  } else if (startTime != null && endTime != null) {
+                    if (!isSameDay(startTime.toDate(), endTime.toDate())) {
+                      timeText = '${DateFormat.Hm().format(startTime.toDate())} - ${DateFormat('M/d H:mm').format(endTime.toDate())}';
+                    } else {
+                      timeText = '${DateFormat.Hm().format(startTime.toDate())} - ${DateFormat.Hm().format(endTime.toDate())}';
+                    }
+                  } else {
+                    timeText = '時刻未設定';
+                  }
                   final dateText = startTime != null ? DateFormat('M月d日').format(startTime.toDate()) : '日付未設定';
                   return ListTile(
                     leading: Text(dateText, style: const TextStyle(fontWeight: FontWeight.bold)),
                     title: Text(title),
                     subtitle: Text(timeText),
-                    onTap: () { showScheduleDialog(context, scheduleDoc: doc); },
-                    trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () { _showDeleteConfirmDialog(doc.id, title); }),
+                    onTap: () {
+                      showScheduleDialog(context, scheduleDoc: doc);
+                    },
+                    trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () {
+                      _showDeleteConfirmDialog(doc.id, title);
+                    }),
                   );
                 },
               ),
